@@ -1,0 +1,5 @@
+{
+  "name": "Sổ Quỹ - Cơm Đài Loan Tawa HCM",
+  "description": "A simple cash flow management app to track income (from food apps, bank transfers) and expenses (ingredients, salary, utilities).",
+  "requestFramePermissions": []
+}
