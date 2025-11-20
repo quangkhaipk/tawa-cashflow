@@ -1,10 +1,11 @@
-import React, { useState, useMemo, useEffect, FC } from 'react';
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  FC,
+} from 'react';
+import { Icon } from '../components/Icon';
 import { supabase } from '../supabaseClient';
-
-// Icon đơn giản (vì file Icon.tsx riêng đã bị xoá trước đó)
-const Icon: FC<{ name: string; className?: string }> = ({ name, className }) => (
-  <span className={`material-symbols-outlined ${className || ''}`}>{name}</span>
-);
 
 type TransactionType = 'income' | 'expense' | 'transfer';
 type DateFilter = 'today' | 'week' | 'month';
@@ -52,7 +53,9 @@ interface ActivityLogEntry {
 
 const formatCurrency = (value: number, showSign = false) => {
   const sign = value > 0 && showSign ? '+' : '';
-  const formattedValue = new Intl.NumberFormat('vi-VN').format(Math.abs(value));
+  const formattedValue = new Intl.NumberFormat('vi-VN').format(
+    Math.abs(value)
+  );
   return `${value < 0 ? '-' : sign}${formattedValue}đ`;
 };
 
@@ -66,31 +69,33 @@ const parseFormattedAmount = (formattedValue: string): number => {
   return Number(formattedValue.replace(/[^0-9]/g, ''));
 };
 
-const CategoryPicker: React.FC<{
+const CategoryPicker: FC<{
   categories: { name: string; icon: string }[];
   selectedCategory: string;
   onSelectCategory: (category: string) => void;
   type: 'income' | 'expense';
 }> = ({ categories, selectedCategory, onSelectCategory, type }) => {
-  const color = type === 'income' ? 'text-profit' : 'text-loss';
+  const color =
+    type === 'income' ? 'text-emerald-600' : 'text-rose-600';
   const bgColor =
     type === 'income'
-      ? 'bg-profit-bg dark:bg-profit/20'
-      : 'bg-loss-bg dark:bg-loss/20';
+      ? 'bg-emerald-50'
+      : 'bg-rose-50';
 
   return (
     <div className="grid grid-cols-4 gap-3 text-center">
       {categories.map(({ name, icon }) => (
-        <div
+        <button
           key={name}
+          type="button"
           onClick={() => onSelectCategory(name)}
-          className="flex flex-col items-center gap-2 cursor-pointer"
+          className="flex flex-col items-center gap-2 cursor-pointer focus:outline-none"
         >
           <div
-            className={`flex items-center justify-center size-14 rounded-2xl transition-colors ${
+            className={`flex items-center justify-center h-14 w-14 rounded-2xl text-lg transition-colors ${
               selectedCategory === name
-                ? `${bgColor} ${color}`
-                : 'bg-zinc-200/60 dark:bg-zinc-800/60 text-text-light-secondary dark:text-text-dark-secondary'
+                ? `${bgColor} ${color} shadow-sm`
+                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-300'
             }`}
           >
             <Icon name={icon} />
@@ -98,13 +103,13 @@ const CategoryPicker: React.FC<{
           <p
             className={`text-xs font-medium ${
               selectedCategory === name
-                ? 'text-text-light-primary dark:text-text-dark-primary'
-                : 'text-text-light-secondary dark:text-text-dark-secondary'
+                ? 'text-zinc-900 dark:text-zinc-50'
+                : 'text-zinc-500 dark:text-zinc-400'
             }`}
           >
             {name}
           </p>
-        </div>
+        </button>
       ))}
     </div>
   );
@@ -121,7 +126,9 @@ const AddEditTransactionModal: FC<{
 }> = ({ isOpen, onClose, onSave, transactionToEdit }) => {
   const [type, setType] = useState<TransactionType>('expense');
   const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState(expenseCategories[0].name);
+  const [category, setCategory] = useState(
+    expenseCategories[0].name
+  );
   const [wallet, setWallet] = useState(wallets[0]);
   const [fromWallet, setFromWallet] = useState(wallets[0]);
   const [toWallet, setToWallet] = useState(wallets[1]);
@@ -146,7 +153,6 @@ const AddEditTransactionModal: FC<{
         setWallet(transactionToEdit.wallet || wallets[0]);
       }
     } else {
-      // reset form
       setType('expense');
       setAmount('');
       setCategory(expenseCategories[0].name);
@@ -159,8 +165,10 @@ const AddEditTransactionModal: FC<{
 
   useEffect(() => {
     if (!transactionToEdit) {
-      if (type === 'income') setCategory(incomeCategories[0].name);
-      if (type === 'expense') setCategory(expenseCategories[0].name);
+      if (type === 'income')
+        setCategory(incomeCategories[0].name);
+      if (type === 'expense')
+        setCategory(expenseCategories[0].name);
     }
   }, [type, transactionToEdit]);
 
@@ -173,108 +181,121 @@ const AddEditTransactionModal: FC<{
       return;
     }
 
+    if (type === 'transfer' && fromWallet === toWallet) {
+      alert('Ví nguồn và ví đích không được trùng nhau.');
+      return;
+    }
+
+    let txData: Omit<
+      Transaction,
+      'id' | 'createdAt' | 'updatedAt'
+    >;
+
     if (type === 'transfer') {
-      if (fromWallet === toWallet) {
-        alert('Ví nguồn và ví đích không được trùng nhau.');
-        return;
-      }
-      const txData: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'> = {
+      txData = {
         type,
         fromWallet,
         toWallet,
         amount: numericAmount,
         note,
       };
-      onSave(txData, transactionToEdit?.id);
-      onClose();
-      return;
+    } else {
+      txData = {
+        type,
+        category,
+        wallet,
+        amount:
+          type === 'income'
+            ? numericAmount
+            : -numericAmount,
+        note,
+      };
     }
-
-    // income / expense
-    if (!wallet || !category) {
-      alert('Vui lòng chọn hạng mục và ví.');
-      return;
-    }
-
-    const txData: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'> = {
-      type,
-      category,
-      wallet,
-      amount: type === 'income' ? numericAmount : -numericAmount,
-      note,
-    };
 
     onSave(txData, transactionToEdit?.id);
-    onClose();
   };
 
   const amountColor =
     type === 'income'
-      ? 'text-profit'
+      ? 'text-emerald-600'
       : type === 'expense'
-      ? 'text-loss'
-      : 'text-blue-500';
+      ? 'text-rose-600'
+      : 'text-sky-600';
 
   return (
-    <div className="fixed inset-0 bg-background-light dark:bg-background-dark z-50 flex flex-col max-w-lg mx-auto">
-      <header className="flex items-center justify-between p-4 pb-2">
+    <div className="fixed inset-0 z-50 flex flex-col max-w-lg mx-auto bg-zinc-50 dark:bg-zinc-900">
+      <header className="flex items-center justify-between px-4 pt-3 pb-1">
         <button
           onClick={onClose}
-          className="flex size-12 items-center justify-center"
+          className="flex size-11 items-center justify-center rounded-full hover:bg-zinc-200/70 dark:hover:bg-zinc-800"
         >
-          <Icon name="close" className="text-stone-900 dark:text-stone-100" />
+          <Icon
+            name="close"
+            className="text-zinc-800 dark:text-zinc-100"
+          />
         </button>
-        <h2 className="text-lg font-bold text-stone-900 dark:text-stone-100">
-          {transactionToEdit ? 'Sửa Giao dịch' : 'Thêm Giao dịch'}
+        <h2 className="text-base font-semibold tracking-wide text-zinc-900 dark:text-zinc-50">
+          {transactionToEdit ? 'Sửa giao dịch' : 'Thêm giao dịch'}
         </h2>
-        <div className="w-12" />
+        <div className="w-11" />
       </header>
 
-      <div className="flex-1 p-4 flex flex-col gap-6 overflow-y-auto">
-        <div className="flex h-12 items-center justify-center rounded-lg bg-zinc-200/60 p-1 dark:bg-zinc-800/60">
+      <div className="px-4 pb-3">
+        <div className="flex h-10 items-center justify-center rounded-full bg-zinc-200/70 dark:bg-zinc-800 p-1">
           <button
+            type="button"
             onClick={() => setType('expense')}
-            className={`flex-1 h-full rounded-md text-base font-bold transition-colors ${
+            className={`flex-1 h-full rounded-full text-xs font-semibold tracking-wide ${
               type === 'expense'
-                ? 'bg-surface-light dark:bg-surface-dark shadow-sm text-loss'
-                : 'text-text-light-secondary dark:text-text-dark-secondary'
+                ? 'bg-white dark:bg-zinc-900 shadow text-rose-600'
+                : 'text-zinc-500'
             }`}
           >
             Chi tiền
           </button>
           <button
+            type="button"
             onClick={() => setType('income')}
-            className={`flex-1 h-full rounded-md text-base font-bold transition-colors ${
+            className={`flex-1 h-full rounded-full text-xs font-semibold tracking-wide ${
               type === 'income'
-                ? 'bg-surface-light dark:bg-surface-dark shadow-sm text-profit'
-                : 'text-text-light-secondary dark:text-text-dark-secondary'
+                ? 'bg-white dark:bg-zinc-900 shadow text-emerald-600'
+                : 'text-zinc-500'
             }`}
           >
             Thu tiền
           </button>
           <button
+            type="button"
             onClick={() => setType('transfer')}
-            className={`flex-1 h-full rounded-md text-base font-bold transition-colors ${
+            className={`flex-1 h-full rounded-full text-xs font-semibold tracking-wide ${
               type === 'transfer'
-                ? 'bg-surface-light dark:bg-surface-dark shadow-sm text-blue-500'
-                : 'text-text-light-secondary dark:text-text-dark-secondary'
+                ? 'bg-white dark:bg-zinc-900 shadow text-sky-600'
+                : 'text-zinc-500'
             }`}
           >
             Chuyển tiền
           </button>
         </div>
+      </div>
 
-        <div className="flex flex-col items-center gap-2">
-          <label className="text-lg font-medium text-text-light-secondary dark:text-text-dark-secondary">
-            Số tiền
-          </label>
-          <div className="flex items-baseline justify-center">
-            <span className={`text-4xl font-bold ${amountColor}`}>đ</span>
+      <div className="flex-1 px-4 pb-4 space-y-6 overflow-y-auto">
+        <div className="flex flex-col items-center gap-1 pt-1">
+          <span className="text-xs font-medium text-zinc-500">
+            SỐ TIỀN
+          </span>
+          <div className="flex items-baseline justify-center gap-1">
+            <span
+              className={`text-4xl font-extrabold ${amountColor}`}
+            >
+              đ
+            </span>
             <input
               value={amount}
-              onChange={(e) => setAmount(formatAmountInput(e.target.value))}
+              onChange={(e) =>
+                setAmount(formatAmountInput(e.target.value))
+              }
               placeholder="0"
-              className={`form-input bg-transparent border-none text-center text-5xl font-bold p-0 focus:ring-0 w-auto max-w-full ml-1 ${amountColor}`}
+              className={`bg-transparent border-none text-center text-4xl font-extrabold tracking-tight focus:ring-0 focus:outline-none w-auto max-w-full ${amountColor}`}
             />
           </div>
         </div>
@@ -282,15 +303,17 @@ const AddEditTransactionModal: FC<{
         <div className="space-y-4">
           {type === 'transfer' ? (
             <>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 <Icon
                   name="move_up"
-                  className="text-text-light-secondary dark:text-text-dark-secondary"
+                  className="text-zinc-500"
                 />
                 <select
                   value={fromWallet}
-                  onChange={(e) => setFromWallet(e.target.value)}
-                  className="form-select w-full bg-transparent border-0 border-b border-border-light dark:border-border-dark focus:ring-0 focus:border-primary-alt"
+                  onChange={(e) =>
+                    setFromWallet(e.target.value)
+                  }
+                  className="form-select w-full border-0 border-b border-zinc-200 dark:border-zinc-700 bg-transparent rounded-none px-0 text-sm focus:ring-0 focus:border-amber-500"
                 >
                   {wallets.map((w) => (
                     <option key={`from-${w}`} value={w}>
@@ -299,15 +322,15 @@ const AddEditTransactionModal: FC<{
                   ))}
                 </select>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 <Icon
                   name="move_down"
-                  className="text-text-light-secondary dark:text-text-dark-secondary"
+                  className="text-zinc-500"
                 />
                 <select
                   value={toWallet}
                   onChange={(e) => setToWallet(e.target.value)}
-                  className="form-select w-full bg-transparent border-0 border-b border-border-light dark:border-border-dark focus:ring-0 focus:border-primary-alt"
+                  className="form-select w-full border-0 border-b border-zinc-200 dark:border-zinc-700 bg-transparent rounded-none px-0 text-sm focus:ring-0 focus:border-amber-500"
                 >
                   {wallets.map((w) => (
                     <option key={`to-${w}`} value={w}>
@@ -319,28 +342,30 @@ const AddEditTransactionModal: FC<{
             </>
           ) : (
             <>
-              <div className="space-y-3">
-                <p className="font-bold text-text-light-primary dark:text-text-dark-primary">
-                  Chọn hạng mục
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-zinc-600">
+                  Hạng mục
                 </p>
                 <CategoryPicker
                   categories={
-                    type === 'income' ? incomeCategories : expenseCategories
+                    type === 'income'
+                      ? incomeCategories
+                      : expenseCategories
                   }
                   selectedCategory={category}
                   onSelectCategory={setCategory}
                   type={type}
                 />
               </div>
-              <div className="flex items-center gap-4 pt-4">
+              <div className="flex items-center gap-3 pt-2">
                 <Icon
                   name="account_balance_wallet"
-                  className="text-text-light-secondary dark:text-text-dark-secondary"
+                  className="text-zinc-500"
                 />
                 <select
                   value={wallet}
                   onChange={(e) => setWallet(e.target.value)}
-                  className="form-select w-full bg-transparent border-0 border-b border-border-light dark:border-border-dark focus:ring-0 focus:border-primary-alt"
+                  className="form-select w-full border-0 border-b border-zinc-200 dark:border-zinc-700 bg-transparent rounded-none px-0 text-sm focus:ring-0 focus:border-amber-500"
                 >
                   {wallets.map((w) => (
                     <option key={w}>{w}</option>
@@ -349,29 +374,28 @@ const AddEditTransactionModal: FC<{
               </div>
             </>
           )}
-
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <Icon
               name="description"
-              className="text-text-light-secondary dark:text-text-dark-secondary"
+              className="text-zinc-500"
             />
             <input
               type="text"
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Ghi chú (không bắt buộc)"
-              className="form-input w-full bg-transparent border-0 border-b border-border-light dark:border-border-dark focus:ring-0 focus:border-primary-alt"
+              className="form-input w-full border-0 border-b border-zinc-200 dark:border-zinc-700 bg-transparent rounded-none px-0 text-sm focus:ring-0 focus:border-amber-500"
             />
           </div>
         </div>
       </div>
 
-      <div className="p-4 mt-auto">
+      <div className="px-4 pb-4">
         <button
           onClick={handleSave}
-          className="w-full h-14 rounded-xl bg-primary-alt text-background-dark text-lg font-bold"
+          className="w-full h-12 rounded-full bg-amber-500 text-amber-950 text-sm font-semibold tracking-wide shadow-md active:scale-[0.99]"
         >
-          Lưu
+          LƯU GIAO DỊCH
         </button>
       </div>
     </div>
@@ -387,28 +411,28 @@ const ActionSheet: FC<{
   if (!isOpen) return null;
   return (
     <div
-      className="fixed inset-0 bg-black/40 z-40 max-w-lg mx-auto"
+      className="fixed inset-0 z-40 max-w-lg mx-auto bg-black/40"
       onClick={onClose}
     >
       <div
-        className="absolute bottom-0 w-full bg-surface-light dark:bg-surface-dark rounded-t-xl p-4 flex flex-col gap-2"
+        className="absolute bottom-0 w-full bg-zinc-50 dark:bg-zinc-900 rounded-t-2xl p-4 space-y-2"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onEdit}
-          className="w-full h-12 rounded-lg bg-zinc-200/80 dark:bg-zinc-800/80 text-text-light-primary dark:text-text-dark-primary font-bold"
+          className="w-full h-11 rounded-xl bg-zinc-200/80 dark:bg-zinc-800/90 text-sm font-semibold text-zinc-900 dark:text-zinc-50"
         >
-          Sửa
+          Sửa giao dịch
         </button>
         <button
           onClick={onDelete}
-          className="w-full h-12 rounded-lg bg-zinc-200/80 dark:bg-zinc-800/80 text-loss font-bold"
+          className="w-full h-11 rounded-xl bg-rose-100 dark:bg-rose-900/40 text-sm font-semibold text-rose-600 dark:text-rose-300"
         >
-          Xoá
+          Xoá giao dịch
         </button>
         <button
           onClick={onClose}
-          className="w-full h-12 rounded-lg mt-2 font-bold text-primary-alt"
+          className="w-full h-11 rounded-xl text-sm font-semibold text-zinc-500"
         >
           Huỷ
         </button>
@@ -425,29 +449,29 @@ const DeleteConfirmModal: FC<{
   if (!isOpen) return null;
   return (
     <div
-      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center max-w-lg mx-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center max-w-lg mx-auto bg-black/40"
       onClick={onClose}
     >
       <div
-        className="bg-surface-light dark:bg-surface-dark rounded-xl p-6 m-4 w-full"
+        className="bg-zinc-50 dark:bg-zinc-900 rounded-2xl p-6 mx-4 w-full space-y-4"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="font-bold text-lg text-text-light-primary dark:text-text-dark-primary">
-          Xác nhận xoá?
+        <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+          Xoá giao dịch?
         </h3>
-        <p className="text-text-light-secondary dark:text-text-dark-secondary mt-2">
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
           Hành động này không thể hoàn tác.
         </p>
-        <div className="flex gap-3 mt-6">
+        <div className="flex gap-3 pt-2">
           <button
             onClick={onClose}
-            className="flex-1 h-11 rounded-lg bg-zinc-200/80 dark:bg-zinc-800/80 font-bold"
+            className="flex-1 h-10 rounded-xl bg-zinc-200/80 dark:bg-zinc-800/90 text-xs font-semibold"
           >
             Huỷ
           </button>
           <button
             onClick={onConfirm}
-            className="flex-1 h-11 rounded-lg bg-loss text-white font-bold"
+            className="flex-1 h-10 rounded-xl bg-rose-600 text-xs font-semibold text-white"
           >
             Xoá
           </button>
@@ -464,40 +488,50 @@ const ActivityLogModal: FC<{
 }> = ({ isOpen, onClose, logs }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 bg-background-light dark:bg-background-dark z-50 flex flex-col max-w-lg mx-auto">
-      <header className="flex items-center justify-between p-4 pb-2 sticky top-0 bg-background-light/[.85] backdrop-blur-sm dark:bg-background-dark/[.85]">
-        <div className="w-12" />
-        <h2 className="text-lg font-bold text-stone-900 dark:text-stone-100">
-          Lịch sử hoạt động
-        </h2>
+    <div className="fixed inset-0 z-50 flex flex-col max-w-lg mx-auto bg-zinc-50 dark:bg-zinc-900">
+      <header className="flex items-center justify-between px-4 pt-3 pb-2 sticky top-0 bg-zinc-50/90 backdrop-blur dark:bg-zinc-900/90">
         <button
           onClick={onClose}
-          className="flex size-12 items-center justify-center"
+          className="flex size-11 items-center justify-center rounded-full hover:bg-zinc-200/70 dark:hover:bg-zinc-800"
         >
-          <Icon name="close" className="text-stone-900 dark:text-stone-100" />
+          <Icon
+            name="close"
+            className="text-zinc-800 dark:text-zinc-100"
+          />
         </button>
+        <h2 className="text-base font-semibold tracking-wide text-zinc-900 dark:text-zinc-50">
+          Lịch sử hoạt động
+        </h2>
+        <div className="w-11" />
       </header>
-      <div className="flex-1 p-4 flex flex-col gap-4 overflow-y-auto">
+      <div className="flex-1 p-4 space-y-3 overflow-y-auto">
         {logs.length === 0 ? (
-          <p className="text-center text-text-light-secondary dark:text-text-dark-secondary py-10">
+          <p className="text-center text-xs text-zinc-500 pt-8">
             Chưa có hoạt động nào.
           </p>
         ) : (
           [...logs]
             .sort(
-              (a, b) => b.timestamp.getTime() - a.timestamp.getTime()
+              (a, b) =>
+                b.timestamp.getTime() -
+                a.timestamp.getTime()
             )
             .map((log) => (
-              <div key={log.id} className="flex gap-3">
-                <Icon
-                  name="history"
-                  className="text-text-light-secondary dark:text-text-dark-secondary mt-1"
-                />
-                <div className="flex-1">
-                  <p className="text-text-light-primary dark:text-text-dark-primary">
+              <div
+                key={log.id}
+                className="flex gap-3 items-start"
+              >
+                <div className="mt-1">
+                  <Icon
+                    name="history"
+                    className="text-zinc-400"
+                  />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <p className="text-xs text-zinc-900 dark:text-zinc-50">
                     {log.message}
                   </p>
-                  <p className="text-xs text-text-light-secondary dark:text-text-dark-secondary">
+                  <p className="text-[10px] text-zinc-500">
                     {log.timestamp.toLocaleString('vi-VN')}
                   </p>
                 </div>
@@ -514,8 +548,14 @@ const OpeningBalanceModal: FC<{
   onClose: () => void;
   onSave: (balances: Record<string, number>) => void;
   currentBalances: Record<string, number>;
-}> = ({ isOpen, onClose, onSave, currentBalances }) => {
-  const [balances, setBalances] = useState(currentBalances);
+}> = ({
+  isOpen,
+  onClose,
+  onSave,
+  currentBalances,
+}) => {
+  const [balances, setBalances] =
+    useState(currentBalances);
 
   useEffect(() => {
     if (isOpen) {
@@ -525,9 +565,15 @@ const OpeningBalanceModal: FC<{
 
   if (!isOpen) return null;
 
-  const handleAmountChange = (wallet: string, value: string) => {
+  const handleAmountChange = (
+    wallet: string,
+    value: string
+  ) => {
     const numericValue = parseFormattedAmount(value);
-    setBalances((prev) => ({ ...prev, [wallet]: numericValue }));
+    setBalances((prev) => ({
+      ...prev,
+      [wallet]: numericValue,
+    }));
   };
 
   const handleSave = () => {
@@ -535,99 +581,80 @@ const OpeningBalanceModal: FC<{
   };
 
   return (
-    <div className="fixed inset-0 bg-background-light dark:bg-background-dark z-50 flex flex-col max-w-lg mx-auto">
-      <header className="flex items-center justify-between p-4 pb-2">
+    <div className="fixed inset-0 z-50 flex flex-col max-w-lg mx-auto bg-zinc-50 dark:bg-zinc-900">
+      <header className="flex items-center justify-between px-4 pt-3 pb-2">
         <button
           onClick={onClose}
-          className="flex size-12 items-center justify-center"
+          className="flex size-11 items-center justify-center rounded-full hover:bg-zinc-200/70 dark:hover:bg-zinc-800"
         >
-          <Icon name="close" className="text-stone-900 dark:text-stone-100" />
+          <Icon
+            name="close"
+            className="text-zinc-800 dark:text-zinc-100"
+          />
         </button>
-        <h2 className="text-lg font-bold text-stone-900 dark:text-stone-100">
-          Cài đặt Tồn Quỹ Đầu Kỳ
+        <h2 className="text-base font-semibold tracking-wide text-zinc-900 dark:text-zinc-50">
+          Tồn quỹ đầu kỳ
         </h2>
-        <div className="w-12" />
+        <div className="w-11" />
       </header>
-      <div className="flex-1 p-4 flex flex-col gap-6 overflow-y-auto">
-        <p className="text-center text-text-light-secondary dark:text-text-dark-secondary">
-          Nhập số dư ban đầu cho mỗi ví. Số dư hiện tại sẽ được tính dựa trên số
-          này.
+      <div className="flex-1 px-4 pb-4 space-y-5 overflow-y-auto">
+        <p className="text-xs text-zinc-500">
+          Nhập số dư ban đầu cho từng ví. Tồn quỹ hiện tại
+          sẽ được tính dựa trên số này.
         </p>
         <div className="space-y-4">
           {wallets.map((wallet) => (
-            <div key={wallet}>
-              <label className="font-bold text-text-light-primary dark:text-text-dark-primary">
+            <div key={wallet} className="space-y-1">
+              <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
                 {wallet}
               </label>
               <input
                 type="text"
-                value={formatAmountInput(String(balances[wallet] || 0))}
-                onChange={(e) => handleAmountChange(wallet, e.target.value)}
-                className="form-input w-full h-14 mt-2 rounded-xl border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark text-lg"
+                value={formatAmountInput(
+                  String(balances[wallet] || 0)
+                )}
+                onChange={(e) =>
+                  handleAmountChange(
+                    wallet,
+                    e.target.value
+                  )
+                }
+                className="form-input w-full h-11 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm"
                 placeholder="0"
               />
             </div>
           ))}
         </div>
       </div>
-      <div className="p-4 mt-auto">
+      <div className="px-4 pb-4">
         <button
           onClick={handleSave}
-          className="w-full h-14 rounded-xl bg-primary-alt text-background-dark text-lg font-bold"
+          className="w-full h-11 rounded-full bg-amber-500 text-amber-950 text-sm font-semibold tracking-wide shadow-md active:scale-[0.99]"
         >
-          Lưu thay đổi
+          LƯU TỒN ĐẦU KỲ
         </button>
       </div>
     </div>
   );
 };
 
-// ================= LedgerScreen =================
+const LedgerScreen: FC = () => {
+  const [transactions, setTransactions] = useState<
+    Transaction[]
+  >([]);
+  const [isLoading, setIsLoading] =
+    useState<boolean>(true);
+  const [activityLog, setActivityLog] = useState<
+    ActivityLogEntry[]
+  >([]);
+  const [openingBalances, setOpeningBalances] =
+    useState<Record<string, number>>(
+      wallets.reduce(
+        (acc, w) => ({ ...acc, [w]: 0 }),
+        {} as Record<string, number>
+      )
+    );
 
-const LedgerScreen: React.FC = () => {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([]);
-  const [openingBalances, setOpeningBalances] = useState<Record<string, number>>(
-    wallets.reduce((acc, w) => ({ ...acc, [w]: 0 }), {})
-  );
-
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingTransaction, setEditingTransaction] =
-    useState<Transaction | null>(null);
-  const [selectedTransaction, setSelectedTransaction] =
-    useState<Transaction | null>(null);
-  const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-  const [isLogOpen, setIsLogOpen] = useState(false);
-  const [isOpeningBalanceOpen, setIsOpeningBalanceOpen] = useState(false);
-
-  const [searchTerm, setSearchTerm] = useState('');
-  const [dateFilter, setDateFilter] = useState<DateFilter>('today');
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
-
-  const addLog = (message: string) => {
-    setActivityLog((prev) => [
-      { id: Date.now(), timestamp: new Date(), message },
-      ...prev,
-    ]);
-  };
-
-  // Helper: map row Supabase -> Transaction
-  const mapRowToTransaction = (row: any): Transaction => ({
-    id: row.id,
-    type: row.type,
-    category: row.category || undefined,
-    wallet: row.wallet || undefined,
-    fromWallet: row.from_wallet || undefined,
-    toWallet: row.to_wallet || undefined,
-    amount: row.amount,
-    note: row.note || undefined,
-    createdAt: row.created_at ? new Date(row.created_at) : new Date(),
-    updatedAt: row.updated_at ? new Date(row.updated_at) : undefined,
-  });
-
-  // Load dữ liệu từ Supabase
   useEffect(() => {
     const fetchTransactions = async () => {
       try {
@@ -638,13 +665,33 @@ const LedgerScreen: React.FC = () => {
           .order('created_at', { ascending: false });
 
         if (error) {
-          console.error('Lỗi tải dữ liệu Supabase:', error);
-          alert('Không tải được dữ liệu sổ quỹ. Kiểm tra lại Supabase.');
+          console.error(
+            'Lỗi tải dữ liệu Supabase:',
+            error
+          );
+          alert(
+            'Không tải được dữ liệu sổ quỹ. Kiểm tra lại Supabase.'
+          );
           return;
         }
 
         if (data) {
-          setTransactions(data.map(mapRowToTransaction));
+          const mapped = data.map((row: any) => ({
+            id: row.id,
+            type: row.type as TransactionType,
+            category: row.category || undefined,
+            wallet: row.wallet || undefined,
+            fromWallet: row.from_wallet || undefined,
+            toWallet: row.to_wallet || undefined,
+            amount: row.amount,
+            note: row.note || undefined,
+            createdAt: new Date(row.created_at),
+            updatedAt: row.updated_at
+              ? new Date(row.updated_at)
+              : undefined,
+          })) as Transaction[];
+
+          setTransactions(mapped);
         }
       } finally {
         setIsLoading(false);
@@ -652,32 +699,67 @@ const LedgerScreen: React.FC = () => {
     };
 
     fetchTransactions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Lưu / sửa giao dịch
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] =
+    useState<Transaction | null>(null);
+  const [selectedTransaction, setSelectedTransaction] =
+    useState<Transaction | null>(null);
+  const [isActionSheetOpen, setIsActionSheetOpen] =
+    useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] =
+    useState(false);
+  const [isLogOpen, setIsLogOpen] = useState(false);
+  const [isOpeningBalanceOpen, setIsOpeningBalanceOpen] =
+    useState(false);
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [dateFilter, setDateFilter] =
+    useState<DateFilter>('today');
+  const [typeFilter, setTypeFilter] =
+    useState<TypeFilter>('all');
+
+  const addLog = (message: string) => {
+    setActivityLog((prev) => [
+      {
+        id: Date.now(),
+        timestamp: new Date(),
+        message,
+      },
+      ...prev,
+    ]);
+  };
+
   const handleSaveTransaction = async (
-    transactionData: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>,
+    transactionData: Omit<
+      Transaction,
+      'id' | 'createdAt' | 'updatedAt'
+    >,
     id?: number
   ) => {
-    // Validate tối thiểu
-    if (!transactionData.amount) {
-      alert('Vui lòng nhập số tiền');
+    if (
+      !transactionData.amount ||
+      (!transactionData.wallet &&
+        transactionData.type !== 'transfer')
+    ) {
+      alert('Vui lòng nhập đủ thông tin');
       return;
     }
 
-    const now = new Date().toISOString();
-
     if (id) {
-      // UPDATE giao dịch cũ
+      const now = new Date().toISOString();
+
       const { data, error } = await supabase
         .from('transactions')
         .update({
           type: transactionData.type,
           category: transactionData.category ?? null,
           wallet: transactionData.wallet ?? null,
-          from_wallet: transactionData.fromWallet ?? null,
-          to_wallet: transactionData.toWallet ?? null,
+          from_wallet:
+            transactionData.fromWallet ?? null,
+          to_wallet:
+            transactionData.toWallet ?? null,
           amount: transactionData.amount,
           note: transactionData.note ?? null,
           updated_at: now,
@@ -692,15 +774,25 @@ const LedgerScreen: React.FC = () => {
         return;
       }
 
-      if (data) {
-        const updatedTx = mapRowToTransaction(data);
-        setTransactions((prev) =>
-          prev.map((t) => (t.id === id ? updatedTx : t))
-        );
-        addLog(`Đã sửa giao dịch #${id}.`);
-      }
+      setTransactions((prev) =>
+        prev.map((t) =>
+          t.id === id
+            ? {
+                ...t,
+                ...transactionData,
+                amount: transactionData.amount,
+                updatedAt: data.updated_at
+                  ? new Date(data.updated_at)
+                  : new Date(),
+              }
+            : t
+        )
+      );
+
+      addLog(`Đã sửa giao dịch #${id}.`);
     } else {
-      // INSERT giao dịch mới
+      const now = new Date().toISOString();
+
       const { data, error } = await supabase
         .from('transactions')
         .insert([
@@ -708,8 +800,10 @@ const LedgerScreen: React.FC = () => {
             type: transactionData.type,
             category: transactionData.category ?? null,
             wallet: transactionData.wallet ?? null,
-            from_wallet: transactionData.fromWallet ?? null,
-            to_wallet: transactionData.toWallet ?? null,
+            from_wallet:
+              transactionData.fromWallet ?? null,
+            to_wallet:
+              transactionData.toWallet ?? null,
             amount: transactionData.amount,
             note: transactionData.note ?? null,
             created_at: now,
@@ -725,20 +819,33 @@ const LedgerScreen: React.FC = () => {
         return;
       }
 
-      if (data) {
-        const newTx = mapRowToTransaction(data);
-        setTransactions((prev) => [newTx, ...prev]);
-        addLog(
-          `Đã thêm giao dịch mới: ${formatCurrency(newTx.amount, true)}.`
-        );
-      }
+      const newTx: Transaction = {
+        id: data.id,
+        type: data.type as TransactionType,
+        category: data.category || undefined,
+        wallet: data.wallet || undefined,
+        fromWallet: data.from_wallet || undefined,
+        toWallet: data.to_wallet || undefined,
+        amount: data.amount,
+        note: data.note || undefined,
+        createdAt: new Date(data.created_at),
+        updatedAt: data.updated_at
+          ? new Date(data.updated_at)
+          : undefined,
+      };
+
+      setTransactions((prev) => [newTx, ...prev]);
+      addLog(
+        `Đã thêm giao dịch mới: ${formatCurrency(
+          newTx.amount
+        )}.`
+      );
     }
 
     setEditingTransaction(null);
     setIsModalOpen(false);
   };
 
-  // Xoá giao dịch
   const handleDeleteTransaction = async () => {
     if (!selectedTransaction) return;
 
@@ -763,13 +870,17 @@ const LedgerScreen: React.FC = () => {
       );
     } else {
       addLog(
-        `Đã xoá giao dịch: ${selectedTransaction.category} (${formatCurrency(
+        `Đã xoá giao dịch: ${
+          selectedTransaction.category
+        } (${formatCurrency(
           selectedTransaction.amount
         )})`
       );
     }
 
-    setTransactions((prev) => prev.filter((t) => t.id !== id));
+    setTransactions((prev) =>
+      prev.filter((t) => t.id !== id)
+    );
     setIsDeleteConfirmOpen(false);
     setSelectedTransaction(null);
   };
@@ -780,6 +891,7 @@ const LedgerScreen: React.FC = () => {
   };
 
   const handleEdit = () => {
+    if (!selectedTransaction) return;
     setEditingTransaction(selectedTransaction);
     setIsModalOpen(true);
     setIsActionSheetOpen(false);
@@ -790,13 +902,20 @@ const LedgerScreen: React.FC = () => {
     setIsActionSheetOpen(false);
   };
 
-  const handleSaveOpeningBalances = (balances: Record<string, number>) => {
+  const handleSaveOpeningBalances = (
+    balances: Record<string, number>
+  ) => {
     wallets.forEach((wallet) => {
-      if (openingBalances[wallet] !== balances[wallet]) {
+      if (
+        openingBalances[wallet] !==
+        balances[wallet]
+      ) {
         addLog(
           `Tồn đầu kỳ "${wallet}" đã thay đổi từ ${formatCurrency(
             openingBalances[wallet] || 0
-          )} thành ${formatCurrency(balances[wallet] || 0)}.`
+          )} thành ${formatCurrency(
+            balances[wallet] || 0
+          )}.`
         );
       }
     });
@@ -813,58 +932,87 @@ const LedgerScreen: React.FC = () => {
     );
     const startOfWeek = new Date(startOfDay);
     startOfWeek.setDate(
-      startOfWeek.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1)
+      startOfWeek.getDate() -
+        now.getDay() +
+        (now.getDay() === 0 ? -6 : 1)
     );
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1
+    );
 
     return transactions.filter((tx) => {
       const lowercasedFilter = searchTerm.toLowerCase();
       const searchMatch =
         !lowercasedFilter ||
-        tx.category?.toLowerCase().includes(lowercasedFilter) ||
-        tx.note?.toLowerCase().includes(lowercasedFilter);
+        tx.category
+          ?.toLowerCase()
+          .includes(lowercasedFilter) ||
+        tx.note
+          ?.toLowerCase()
+          .includes(lowercasedFilter);
 
       const txDate = tx.createdAt;
       let dateMatch = false;
-      if (dateFilter === 'today') dateMatch = txDate >= startOfDay;
-      else if (dateFilter === 'week') dateMatch = txDate >= startOfWeek;
-      else if (dateFilter === 'month') dateMatch = txDate >= startOfMonth;
+      if (dateFilter === 'today')
+        dateMatch = txDate >= startOfDay;
+      else if (dateFilter === 'week')
+        dateMatch = txDate >= startOfWeek;
+      else if (dateFilter === 'month')
+        dateMatch = txDate >= startOfMonth;
 
-      const typeMatch = typeFilter === 'all' || tx.type === typeFilter;
+      const typeMatch =
+        typeFilter === 'all' ||
+        tx.type === typeFilter;
 
       return searchMatch && dateMatch && typeMatch;
     });
   }, [transactions, dateFilter, typeFilter, searchTerm]);
 
   const groupedTransactions = useMemo(() => {
-    return filteredTransactions.reduce<Record<string, Transaction[]>>(
-      (acc, tx) => {
-        const dateKey = tx.createdAt.toDateString();
-        if (!acc[dateKey]) acc[dateKey] = [];
-        acc[dateKey].push(tx);
-        return acc;
-      },
-      {}
-    );
+    return filteredTransactions.reduce<
+      Record<string, Transaction[]>
+    >((acc, tx) => {
+      const dateKey = tx.createdAt.toDateString();
+      if (!acc[dateKey]) acc[dateKey] = [];
+      acc[dateKey].push(tx);
+      return acc;
+    }, {});
   }, [filteredTransactions]);
 
-  const { balances, totalBalance, totalIncome, totalExpense } = useMemo(() => {
-    const balances: Record<string, number> = wallets.reduce(
-      (acc: Record<string, number>, w) => ({
-        ...acc,
-        [w]: openingBalances[w] || 0,
-      }),
-      {}
-    );
+  const {
+    balances,
+    totalBalance,
+    totalIncome,
+    totalExpense,
+  } = useMemo(() => {
+    const balances: Record<string, number> =
+      wallets.reduce(
+        (acc: Record<string, number>, w) => ({
+          ...acc,
+          [w]: openingBalances[w] || 0,
+        }),
+        {} as Record<string, number>
+      );
 
     transactions.forEach((tx) => {
       if (tx.type === 'transfer') {
-        if (tx.fromWallet && balances[tx.fromWallet] !== undefined)
+        if (
+          tx.fromWallet &&
+          balances[tx.fromWallet] !== undefined
+        )
           balances[tx.fromWallet] -= tx.amount;
-        if (tx.toWallet && balances[tx.toWallet] !== undefined)
+        if (
+          tx.toWallet &&
+          balances[tx.toWallet] !== undefined
+        )
           balances[tx.toWallet] += tx.amount;
       } else {
-        if (tx.wallet && balances[tx.wallet] !== undefined) {
+        if (
+          tx.wallet &&
+          balances[tx.wallet] !== undefined
+        ) {
           balances[tx.wallet] += tx.amount;
         }
       }
@@ -877,8 +1025,10 @@ const LedgerScreen: React.FC = () => {
 
     const { income, expense } = filteredTransactions.reduce(
       (acc, tx) => {
-        if (tx.type === 'income') acc.income += tx.amount;
-        else if (tx.type === 'expense') acc.expense += tx.amount;
+        if (tx.type === 'income')
+          acc.income += tx.amount;
+        else if (tx.type === 'expense')
+          acc.expense += tx.amount;
         return acc;
       },
       { income: 0, expense: 0 }
@@ -892,228 +1042,352 @@ const LedgerScreen: React.FC = () => {
     };
   }, [transactions, filteredTransactions, openingBalances]);
 
+  const dateOptions: Record<DateFilter, string> = {
+    today: 'Hôm nay',
+    week: 'Tuần này',
+    month: 'Tháng này',
+  };
+
   return (
-    <div className="flex flex-col h-full bg-background-light dark:bg-background-dark pb-24">
-      <header className="sticky top-0 z-10 flex items-center justify-between bg-background-light/[.85] p-4 pb-2 backdrop-blur-sm dark:bg-background-dark/[.85]">
-        <div className="flex size-12 shrink-0 items-center justify-start">
-          <button onClick={() => setIsOpeningBalanceOpen(true)}>
-            <Icon name="settings" />
+    <div className="flex flex-col h-full bg-zinc-50 dark:bg-zinc-900 pb-24 max-w-lg mx-auto">
+      {/* Header */}
+      <header className="sticky top-0 z-20 bg-zinc-50/95 dark:bg-zinc-900/95 backdrop-blur">
+        <div className="flex items-center justify-between px-4 pt-3 pb-2">
+          <button
+            onClick={() => setIsOpeningBalanceOpen(true)}
+            className="flex size-10 items-center justify-center rounded-full hover:bg-zinc-200/70 dark:hover:bg-zinc-800"
+          >
+            <Icon
+              name="settings"
+              className="text-zinc-800 dark:text-zinc-100"
+            />
+          </button>
+          <div className="flex flex-col items-center gap-0.5">
+            <span className="text-[10px] tracking-[0.2em] font-semibold text-amber-600 uppercase">
+              SỔ QUỸ TAWA
+            </span>
+            <span className="text-xs font-medium text-zinc-500">
+              QUẬN 1
+            </span>
+          </div>
+          <button
+            onClick={() => setIsLogOpen(true)}
+            className="flex size-10 items-center justify-center rounded-full hover:bg-zinc-200/70 dark:hover:bg-zinc-800"
+          >
+            <Icon
+              name="history"
+              className="text-zinc-800 dark:text-zinc-100"
+            />
           </button>
         </div>
-        <h2 className="flex-1 text-lg font-bold leading-tight tracking-[-0.015em] text-stone-900 dark:text-stone-100 text-center">
-          Sổ Quỹ TAWA - QUẬN 1
-        </h2>
-        <div className="flex w-12 items-center justify-end">
-          <button onClick={() => setIsLogOpen(true)}>
-            <Icon name="history" />
-          </button>
+
+        {/* Banner */}
+        <div className="mx-4 mb-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-1.5 flex items-center gap-2">
+          <Icon
+            name="offline_bolt"
+            className="text-amber-500 text-base"
+          />
+          <p className="text-[11px] text-amber-700 leading-snug">
+            Chế độ kết nối Supabase • Dữ liệu sổ quỹ được
+            lưu online
+          </p>
         </div>
       </header>
 
+      {/* Main */}
       <main className="flex-1 overflow-y-auto">
-        <div className="p-4 space-y-4">
-          <div className="rounded-xl bg-primary/20 p-4 text-center">
-            <p className="text-sm font-medium text-primary/80">Tổng Tồn Quỹ</p>
-            <p className="text-3xl font-bold text-primary">
+        {/* Top summary */}
+        <div className="px-4 pt-1 space-y-3">
+          {/* Tổng tồn quỹ */}
+          <div className="rounded-2xl bg-gradient-to-br from-emerald-50 via-amber-50 to-rose-50 dark:from-emerald-900/30 dark:via-amber-900/20 dark:to-rose-900/30 px-4 py-4 shadow-sm border border-white/80 dark:border-zinc-800">
+            <p className="text-[11px] font-semibold tracking-[0.18em] text-zinc-500 uppercase">
+              TỔNG TỒN QUỸ
+            </p>
+            <p className="mt-1 text-4xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-50">
               {formatCurrency(totalBalance)}
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            {Object.entries(balances).map(([wallet, balance]) => {
-              const isCash = wallet === 'Ví Tiền mặt';
-              const cardClasses = isCash
-                ? 'bg-green-100/60 dark:bg-green-900/30 border-green-200 dark:border-green-800'
-                : 'bg-blue-100/60 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800';
-              const walletTextClasses = isCash
-                ? 'text-green-900/80 dark:text-green-300/80'
-                : 'text-blue-900/80 dark:text-blue-300/80';
-              const balanceTextClasses = isCash
-                ? 'text-green-900 dark:text-green-200'
-                : 'text-blue-900 dark:text-blue-200';
+          {/* Ví */}
+          <div className="grid grid-cols-2 gap-3">
+            {Object.entries(balances).map(
+              ([wallet, balance]) => {
+                const isCash = wallet === 'Ví Tiền mặt';
+                const cardClasses = isCash
+                  ? 'bg-emerald-50 border-emerald-100'
+                  : 'bg-sky-50 border-sky-100';
+                const walletTextClasses = isCash
+                  ? 'text-emerald-700'
+                  : 'text-sky-700';
+                const balanceTextClasses = isCash
+                  ? 'text-emerald-900'
+                  : 'text-sky-900';
 
-              return (
-                <div
-                  key={wallet}
-                  className={`rounded-lg p-3 border ${cardClasses}`}
-                >
-                  <p className={`text-sm font-medium ${walletTextClasses}`}>
-                    {wallet}
-                  </p>
-                  <p className={`text-xl font-bold ${balanceTextClasses}`}>
-                    {formatCurrency(balance as number)}
-                  </p>
-                </div>
-              );
-            })}
+                const iconName = isCash
+                  ? 'payments'
+                  : 'account_balance';
+
+                return (
+                  <div
+                    key={wallet}
+                    className={`rounded-2xl border px-3 py-3 flex flex-col gap-1 ${cardClasses}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <Icon
+                          name={iconName}
+                          className={`text-xs ${walletTextClasses}`}
+                        />
+                        <p
+                          className={`text-[11px] font-semibold uppercase tracking-wide ${walletTextClasses}`}
+                        >
+                          {wallet}
+                        </p>
+                      </div>
+                    </div>
+                    <p
+                      className={`text-2xl font-bold tracking-tight ${balanceTextClasses}`}
+                    >
+                      {formatCurrency(
+                        balance as number
+                      )}
+                    </p>
+                  </div>
+                );
+              }
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-lg bg-profit-bg dark:bg-profit/20 p-3">
-              <p className="text-sm text-profit dark:text-profit-bg/80">
-                Thu trong ngày
+          {/* Thu / Chi / Chênh lệch */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-2xl bg-emerald-50 px-3 py-2.5">
+              <p className="text-[11px] font-semibold text-emerald-600">
+                TỔNG THU
               </p>
-              <p className="font-bold text-profit dark:text-profit-bg">
+              <p className="mt-1 text-lg font-bold text-emerald-700">
                 {formatCurrency(totalIncome, true)}
               </p>
             </div>
-            <div className="rounded-lg bg-loss-bg dark:bg-loss/20 p-3">
-              <p className="text-sm text-loss dark:text-loss-bg/80">
-                Chi trong ngày
+            <div className="rounded-2xl bg-rose-50 px-3 py-2.5">
+              <p className="text-[11px] font-semibold text-rose-600">
+                TỔNG CHI
               </p>
-              <p className="font-bold text-loss dark:text-loss-bg">
+              <p className="mt-1 text-lg font-bold text-rose-700">
                 {formatCurrency(totalExpense)}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-zinc-100 px-3 py-2.5">
+              <p className="text-[11px] font-semibold text-zinc-600">
+                CHÊNH LỆCH
+              </p>
+              <p className="mt-1 text-lg font-bold text-zinc-900">
+                {formatCurrency(
+                  totalIncome + totalExpense
+                )}
               </p>
             </div>
           </div>
         </div>
 
-        <div className="px-4 py-2 flex flex-col gap-3">
-          <div className="flex gap-2">
+        {/* Bộ lọc + tìm kiếm */}
+        <div className="px-4 pt-3 pb-2 space-y-2">
+          <div className="flex items-center gap-2 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-3 py-1.5 shadow-sm">
+            <Icon
+              name='search'
+              className="text-zinc-400 text-sm"
+            />
             <input
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="form-input flex-1 rounded-lg border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark"
+              onChange={(e) =>
+                setSearchTerm(e.target.value)
+              }
+              className="flex-1 bg-transparent border-none text-xs text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-0"
               placeholder="Tìm theo hạng mục, ghi chú..."
             />
           </div>
           <div className="flex gap-2">
             <select
-              onChange={(e) =>
-                setDateFilter(e.target.value as DateFilter)
-              }
               value={dateFilter}
-              className="form-select flex-1 rounded-lg border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark"
+              onChange={(e) =>
+                setDateFilter(
+                  e.target.value as DateFilter
+                )
+              }
+              className="flex-1 h-9 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 text-[11px] text-zinc-700 dark:text-zinc-200 focus:ring-0 focus:outline-none"
             >
-              <option value="today">Hôm nay</option>
-              <option value="week">Tuần này</option>
-              <option value="month">Tháng này</option>
+              <option value="today">
+                Hôm nay
+              </option>
+              <option value="week">
+                Tuần này
+              </option>
+              <option value="month">
+                Tháng này
+              </option>
             </select>
             <select
-              onChange={(e) =>
-                setTypeFilter(e.target.value as TypeFilter)
-              }
               value={typeFilter}
-              className="form-select flex-1 rounded-lg border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark"
+              onChange={(e) =>
+                setTypeFilter(
+                  e.target.value as TypeFilter
+                )
+              }
+              className="flex-1 h-9 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 text-[11px] text-zinc-700 dark:text-zinc-200 focus:ring-0 focus:outline-none"
             >
               <option value="all">Tất cả</option>
               <option value="income">Thu</option>
               <option value="expense">Chi</option>
-              <option value="transfer">Chuyển tiền</option>
+              <option value="transfer">
+                Chuyển tiền
+              </option>
             </select>
           </div>
         </div>
 
-        <div className="flex flex-col gap-2">
-          {Object.entries(groupedTransactions).length === 0 ? (
-            <p className="text-center text-text-light-secondary dark:text-text-dark-secondary py-10">
-              {isLoading ? 'Đang tải dữ liệu...' : 'Không có giao dịch nào.'}
+        {/* List giao dịch */}
+        <div className="flex flex-col pb-4">
+          {isLoading ? (
+            <p className="text-center text-xs text-zinc-400 pt-8">
+              Đang tải dữ liệu...
+            </p>
+          ) : Object.entries(groupedTransactions)
+              .length === 0 ? (
+            <p className="text-center text-xs text-zinc-500 pt-8">
+              Không có giao dịch nào.
             </p>
           ) : (
             Object.entries(groupedTransactions)
               .sort(
                 ([dateA], [dateB]) =>
-                  new Date(dateB).getTime() - new Date(dateA).getTime()
+                  new Date(dateB).getTime() -
+                  new Date(dateA).getTime()
               )
               .map(([date, txs]) => (
                 <div key={date}>
-                  <h4 className="px-4 py-2 text-sm font-bold leading-normal tracking-[0.015em] text-primary-alt dark:text-primary-alt">
-                    {new Date(date).toLocaleDateString('vi-VN', {
+                  <h4 className="px-4 pt-3 pb-1 text-[11px] font-semibold tracking-wide text-amber-600 uppercase">
+                    {new Date(
+                      date
+                    ).toLocaleDateString('vi-VN', {
                       weekday: 'long',
                       year: 'numeric',
                       month: 'long',
                       day: 'numeric',
                     })}
                   </h4>
-                  {[...(txs as Transaction[])]
-                    .sort(
-                      (a, b) =>
-                        b.createdAt.getTime() - a.createdAt.getTime()
-                    )
-                    .map((tx) => {
-                      const isIncome = tx.type === 'income';
-                      const isExpense = tx.type === 'expense';
-                      const isTransfer = tx.type === 'transfer';
+                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800 bg-white/70 dark:bg-zinc-900/60">
+                    {[...(txs as Transaction[])]
 
-                      const iconName = isIncome
-                        ? 'south_west'
-                        : isExpense
-                        ? 'north_east'
-                        : 'swap_horiz';
-                      const colorClasses = isIncome
-                        ? 'bg-green-500/20 text-green-500'
-                        : isExpense
-                        ? 'bg-red-500/20 text-red-500'
-                        : 'bg-blue-500/20 text-blue-500';
-                      const amountColor = isIncome
-                        ? 'text-green-500'
-                        : isExpense
-                        ? 'text-red-500'
-                        : 'text-blue-500';
+                      .sort(
+                        (a, b) =>
+                          b.createdAt.getTime() -
+                          a.createdAt.getTime()
+                      )
+                      .map((tx) => {
+                        const isIncome =
+                          tx.type === 'income';
+                        const isExpense =
+                          tx.type === 'expense';
+                        const isTransfer =
+                          tx.type === 'transfer';
 
-                      return (
-                        <div
-                          key={tx.id}
-                          onClick={() => handleOpenActionSheet(tx)}
-                          className="flex min-h-[72px] cursor-pointer items-start gap-4 bg-background-light px-4 py-3 justify-between hover:bg-stone-200/50 dark:bg-background-dark dark:hover:bg-stone-800/50"
-                        >
-                          <div className="flex items-center gap-4 flex-1 overflow-hidden">
-                            <div
-                              className={`flex size-12 shrink-0 items-center justify-center rounded-lg ${colorClasses}`}
-                            >
-                              <Icon name={iconName} />
+                        const iconName = isIncome
+                          ? 'south_west'
+                          : isExpense
+                          ? 'north_east'
+                          : 'swap_horiz';
+                        const colorClasses =
+                          isIncome
+                            ? 'bg-emerald-50 text-emerald-600'
+                            : isExpense
+                            ? 'bg-rose-50 text-rose-600'
+                            : 'bg-sky-50 text-sky-600';
+                        const amountColor =
+                          isIncome
+                            ? 'text-emerald-600'
+                            : isExpense
+                            ? 'text-rose-600'
+                            : 'text-sky-600';
+
+                        return (
+                          <button
+                            key={tx.id}
+                            type="button"
+                            onClick={() =>
+                              handleOpenActionSheet(
+                                tx
+                              )
+                            }
+                            className="w-full flex items-start justify-between px-4 py-3 gap-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/80"
+                          >
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <div
+                                className={`flex h-9 w-9 items-center justify-center rounded-xl text-base ${colorClasses}`}
+                              >
+                                <Icon name={iconName} />
+                              </div>
+                              <div className="flex flex-col items-start gap-0.5 flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-50 truncate max-w-[180px]">
+                                  {isTransfer
+                                    ? 'Chuyển tiền'
+                                    : tx.category}
+                                </p>
+                                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">
+                                  {isTransfer
+                                    ? `Từ ${tx.fromWallet} → ${tx.toWallet}`
+                                    : tx.wallet}
+                                </p>
+                                {tx.note && (
+                                  <p className="text-[10px] italic text-zinc-400 truncate max-w-[220px]">
+                                    "{tx.note}"
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                            <div className="flex flex-col justify-center overflow-hidden">
-                              <p className="font-medium line-clamp-1 text-stone-900 dark:text-stone-100">
-                                {isTransfer ? 'Chuyển tiền' : tx.category}
+                            <div className="flex flex-col items-end gap-0.5 shrink-0">
+                              <p
+                                className={`text-xs font-semibold ${amountColor}`}
+                              >
+                                {formatCurrency(
+                                  tx.amount
+                                )}
                               </p>
-                              <p className="text-sm line-clamp-2 text-stone-600 dark:text-stone-400">
-                                {isTransfer
-                                  ? `Từ ${tx.fromWallet} → ${tx.toWallet}`
-                                  : tx.wallet}
+                              <p className="text-[10px] text-zinc-400">
+                                {tx.createdAt.toLocaleTimeString(
+                                  'vi-VN',
+                                  {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  }
+                                )}
                               </p>
-                              {tx.note && (
-                                <p className="text-xs italic line-clamp-2 text-stone-500 dark:text-stone-500 pt-1 truncate">
-                                  "{tx.note}"
+                              {tx.updatedAt && (
+                                <p className="text-[9px] text-zinc-400 italic">
+                                  Đã sửa
                                 </p>
                               )}
                             </div>
-                          </div>
-                          <div className="flex flex-col items-end shrink-0">
-                            <p className={`font-normal ${amountColor}`}>
-                              {formatCurrency(tx.amount)}
-                            </p>
-                            <p className="text-xs text-stone-500 dark:text-stone-400">
-                              {tx.createdAt.toLocaleTimeString('vi-VN', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </p>
-                            {tx.updatedAt && (
-                              <p className="text-xs italic text-stone-500 dark:text-stone-500">
-                                Đã sửa
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                          </button>
+                        );
+                      })}
+                  </div>
                 </div>
               ))
           )}
         </div>
       </main>
 
+      {/* Nút + */}
       <button
         onClick={() => {
           setEditingTransaction(null);
           setIsModalOpen(true);
         }}
-        className="fixed bottom-6 right-1/2 translate-x-1/2 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full bg-primary-alt text-black shadow-lg hover:bg-primary-alt/90 dark:text-stone-900"
+        className="fixed bottom-6 left-1/2 -translate-x-1/2 flex h-14 w-14 items-center justify-center rounded-full bg-amber-500 text-amber-950 shadow-lg shadow-amber-500/40 active:scale-[0.97]"
       >
         <Icon name="add" className="!text-3xl" />
       </button>
 
+      {/* Modals */}
       <AddEditTransactionModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
