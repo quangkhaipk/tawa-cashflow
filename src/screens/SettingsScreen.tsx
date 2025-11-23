@@ -1,4 +1,3 @@
-// src/screens/SettingsScreen.tsx
 import React, { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
 import {
@@ -40,22 +39,18 @@ const SettingsScreen: React.FC<any> = ({ onNavigate }) => {
     run();
   }, []);
 
-  const update = (key: keyof AppSettings, value: any) => {
+  const update = (key: keyof AppSettings, value: any) =>
     setForm((prev) => ({ ...prev, [key]: value }));
-  };
 
   const onSave = async () => {
     setSaving(true);
     try {
       const user = (await supabase.auth.getUser()).data.user;
-      if (!user) {
-        alert("Bạn chưa đăng nhập.");
-        return;
-      }
+      if (!user) return alert("Bạn chưa đăng nhập.");
       const saved = await saveSettings(user.id, form);
       setForm(saved);
       alert("Đã lưu cài đặt.");
-      if (onNavigate) onNavigate("ledger");
+      onNavigate?.("ledger");
     } catch (e: any) {
       alert(`Lỗi lưu settings: ${e.message}`);
     } finally {
@@ -64,65 +59,58 @@ const SettingsScreen: React.FC<any> = ({ onNavigate }) => {
   };
 
   const onClearData = async () => {
-    if (!confirm("Xoá sạch toàn bộ giao dịch của tài khoản này?")) return;
-    if (!confirm("Chắc chắn lần nữa? Không thể khôi phục.")) return;
-
+    if (!confirm("Xoá sạch toàn bộ giao dịch?")) return;
+    if (!confirm("Chắc chắn lần nữa?")) return;
     try {
       await clearAllTransactions(userId);
       alert("Đã xoá sạch giao dịch.");
-      if (onNavigate) onNavigate("ledger");
+      onNavigate?.("ledger");
     } catch (e: any) {
       alert(`Lỗi xoá dữ liệu: ${e.message}`);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="p-4 text-sm opacity-70">Đang tải Settings...</div>
-    );
-  }
+  if (loading) return <div className="p-4 text-sm opacity-70">Đang tải...</div>;
 
   return (
-    <div className="min-h-screen p-4 bg-background-light dark:bg-background-dark text-text-light dark:text-text-dark">
+    <div className="min-h-screen p-4 bg-background-dark text-text-dark">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-extrabold">Cài đặt Sổ quỹ</h2>
         <button
           className="text-sm font-bold text-primary"
-          onClick={() => onNavigate && onNavigate("ledger")}
+          onClick={() => onNavigate?.("ledger")}
         >
           Quay lại
         </button>
       </div>
 
-      {/* Tồn quỹ đầu kỳ */}
-      <div className="rounded-2xl bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark p-4 mb-4">
+      <div className="rounded-2xl bg-card-dark border border-border-dark p-4 mb-4">
         <div className="font-bold mb-2">Tồn quỹ đầu kỳ</div>
-
-        <label className="text-sm opacity-70">Ví tiền mặt</label>
-        <input
-          type="number"
-          className="w-full rounded-xl border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark p-2 mt-1 mb-3"
-          value={form.opening_cash}
-          onChange={(e) => update("opening_cash", Number(e.target.value))}
-        />
 
         <label className="text-sm opacity-70">Ví ngân hàng</label>
         <input
           type="number"
-          className="w-full rounded-xl border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark p-2 mt-1"
+          className="w-full rounded-xl border-border-dark bg-background-dark p-2 mt-1 mb-3"
           value={form.opening_bank}
           onChange={(e) => update("opening_bank", Number(e.target.value))}
         />
+
+        <label className="text-sm opacity-70">Ví tiền mặt</label>
+        <input
+          type="number"
+          className="w-full rounded-xl border-border-dark bg-background-dark p-2 mt-1"
+          value={form.opening_cash}
+          onChange={(e) => update("opening_cash", Number(e.target.value))}
+        />
       </div>
 
-      {/* Điều kiện cảnh báo */}
-      <div className="rounded-2xl bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark p-4 mb-4">
+      <div className="rounded-2xl bg-card-dark border border-border-dark p-4 mb-4">
         <div className="font-bold mb-2">Cảnh báo</div>
 
         <label className="text-sm opacity-70">Ngưỡng ví tiền mặt thấp</label>
         <input
           type="number"
-          className="w-full rounded-xl border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark p-2 mt-1 mb-3"
+          className="w-full rounded-xl border-border-dark bg-background-dark p-2 mt-1 mb-3"
           value={form.cash_low_threshold}
           onChange={(e) => update("cash_low_threshold", Number(e.target.value))}
         />
@@ -130,7 +118,7 @@ const SettingsScreen: React.FC<any> = ({ onNavigate }) => {
         <label className="text-sm opacity-70">Số ngày không có giao dịch</label>
         <input
           type="number"
-          className="w-full rounded-xl border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark p-2 mt-1 mb-3"
+          className="w-full rounded-xl border-border-dark bg-background-dark p-2 mt-1 mb-3"
           value={form.inactive_days_threshold}
           onChange={(e) => update("inactive_days_threshold", Number(e.target.value))}
         />
@@ -138,21 +126,20 @@ const SettingsScreen: React.FC<any> = ({ onNavigate }) => {
         <label className="text-sm opacity-70">Nội dung cảnh báo ví thấp</label>
         <input
           type="text"
-          className="w-full rounded-xl border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark p-2 mt-1 mb-3"
+          className="w-full rounded-xl border-border-dark bg-background-dark p-2 mt-1 mb-3"
           value={form.cash_low_message}
           onChange={(e) => update("cash_low_message", e.target.value)}
         />
 
-        <label className="text-sm opacity-70">Nội dung cảnh báo không nhập giao dịch</label>
+        <label className="text-sm opacity-70">Nội dung cảnh báo không nhập</label>
         <input
           type="text"
-          className="w-full rounded-xl border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark p-2 mt-1"
+          className="w-full rounded-xl border-border-dark bg-background-dark p-2 mt-1"
           value={form.inactive_message}
           onChange={(e) => update("inactive_message", e.target.value)}
         />
       </div>
 
-      {/* Buttons */}
       <div className="flex flex-col gap-3">
         <button
           onClick={onSave}
