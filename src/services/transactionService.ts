@@ -1,26 +1,28 @@
 import { supabase } from "../supabaseClient";
 
-const PENDING_KEY = "pending_transactions_v2";
+const LOCAL_KEY = "pending_transactions_v1";
 
-function loadPending() {
+function getLocalPending(): any[] {
   try {
-    return JSON.parse(localStorage.getItem(PENDING_KEY) || "[]");
+    return JSON.parse(localStorage.getItem(LOCAL_KEY) || "[]");
   } catch {
     return [];
   }
 }
-function savePending(items: any[]) {
-  localStorage.setItem(PENDING_KEY, JSON.stringify(items));
+function setLocalPending(items: any[]) {
+  localStorage.setItem(LOCAL_KEY, JSON.stringify(items));
 }
 
-async function getUserId() {
-  const user = (await supabase.auth.getUser()).data.user;
-  if (!user) throw new Error("Chưa đăng nhập");
-  return user.id;
+async function requireUserId() {
+  const { data } = await supabase.auth.getUser();
+  const userId = data.user?.id;
+  if (!userId) throw new Error("Chưa đăng nhập");
+  return userId;
 }
 
 export async function listTransactions() {
-  const user_id = await getUserId();
+  const user_id = await requireUserId();
+
   const { data, error } = await supabase
     .from("transactions")
     .select("*")
@@ -29,61 +31,46 @@ export async function listTransactions() {
 
   if (error) throw error;
 
-  const pending = loadPending();
-  return [...pending, ...(data || [])].sort(
-    (a, b) =>
-      new Date(b.created_at || b._pendingAt).getTime() -
-      new Date(a.created_at || a._pendingAt).getTime()
-  );
+  const pending = getLocalPending();
+  return [...pending, ...(data || [])];
 }
 
 export async function createTransaction(payload: any) {
-  const user_id = await getUserId();
-  const dataToInsert = { ...payload, user_id };
+  const user_id = await requireUserId();
 
-  try {
-    const { data, error } = await supabase
-      .from("transactions")
-      .insert(dataToInsert)
-      .select()
-      .single();
+  const client_id = crypto.randomUUID();
+  const row = {
+    ...payload,
+    user_id,
+    client_id,
+    updated_at: new Date().toISOString(),
+  };
 
-    if (error) throw error;
-    return { data, isPending: false };
-  } catch (e) {
-    // offline fallback
-    const pending = loadPending();
-    const localTx = {
-      ...dataToInsert,
-      id: `pending-${Date.now()}`,
-      _pendingAt: new Date().toISOString(),
-    };
-    pending.unshift(localTx);
-    savePending(pending);
-    return { data: localTx, isPending: true };
+  if (!navigator.onLine) {
+    const pending = getLocalPending();
+    pending.unshift({ ...row, _pendingAt: new Date().toISOString() });
+    setLocalPending(pending);
+    return { isPending: true, data: row };
   }
+
+  const { data, error } = await supabase
+    .from("transactions")
+    .insert(row)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return { isPending: false, data };
 }
 
-export async function updateTransaction(id: any, patch: any) {
-  const user_id = await getUserId();
+export async function updateTransaction(id: number, patch: any) {
+  const user_id = await requireUserId();
 
-  // nếu pending local
-  if (String(id).startsWith("pending-")) {
-    const pending = loadPending();
-    const idx = pending.findIndex((t: any) => t.id === id);
-    if (idx >= 0) {
-      const before = pending[idx];
-      pending[idx] = { ...before, ...patch };
-      savePending(pending);
-      return { data: pending[idx], isPending: true };
-    }
-  }
-
-  // lấy before để log
-  const { data: beforeData } = await supabase
+  const { data: before } = await supabase
     .from("transactions")
     .select("*")
     .eq("id", id)
+    .eq("user_id", user_id)
     .single();
 
   const { data, error } = await supabase
@@ -96,31 +83,25 @@ export async function updateTransaction(id: any, patch: any) {
 
   if (error) throw error;
 
-  // log
   await supabase.from("transaction_logs").insert({
     tx_id: id,
     action: "updated",
-    before_data: beforeData || null,
+    before_data: before,
     after_data: data,
     user_id,
   });
 
-  return { data, isPending: false };
+  return data;
 }
 
-export async function removeTransaction(id: any) {
-  const user_id = await getUserId();
+export async function removeTransaction(id: number) {
+  const user_id = await requireUserId();
 
-  if (String(id).startsWith("pending-")) {
-    const pending = loadPending().filter((t: any) => t.id !== id);
-    savePending(pending);
-    return { ok: true, isPending: true };
-  }
-
-  const { data: beforeData } = await supabase
+  const { data: before } = await supabase
     .from("transactions")
     .select("*")
     .eq("id", id)
+    .eq("user_id", user_id)
     .single();
 
   const { error } = await supabase
@@ -134,51 +115,44 @@ export async function removeTransaction(id: any) {
   await supabase.from("transaction_logs").insert({
     tx_id: id,
     action: "deleted",
-    before_data: beforeData || null,
+    before_data: before,
     after_data: null,
     user_id,
   });
 
-  return { ok: true, isPending: false };
+  return true;
 }
 
 export async function listTransactionLogs() {
-  const user_id = await getUserId();
-  const fromDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const user_id = await requireUserId();
 
   const { data, error } = await supabase
     .from("transaction_logs")
     .select("*")
     .eq("user_id", user_id)
-    .gte("created_at", fromDate)
+    .gte("created_at", new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString())
     .order("created_at", { ascending: false });
 
   if (error) throw error;
   return data || [];
 }
 
+// Sync local pending when online
 export async function syncPendingTransactions() {
-  const user_id = await getUserId();
-  const pending = loadPending();
-  if (!pending.length) return { synced: 0 };
+  const user_id = await requireUserId();
+  const pending = getLocalPending();
+  if (pending.length === 0) return { synced: 0 };
 
-  let synced = 0;
-  const remain: any[] = [];
+  const toSync = pending.map((p) => {
+    const { _pendingAt, ...rest } = p;
+    return { ...rest, user_id, updated_at: new Date().toISOString() };
+  });
 
-  for (const p of pending) {
-    try {
-      const { id, _pendingAt, ...rest } = p;
-      const { error } = await supabase.from("transactions").insert({
-        ...rest,
-        user_id,
-      });
-      if (error) throw error;
-      synced++;
-    } catch {
-      remain.push(p);
-    }
+  const { error } = await supabase.from("transactions").insert(toSync);
+  if (error) {
+    return { synced: 0, error };
   }
 
-  savePending(remain);
-  return { synced, remain: remain.length };
+  setLocalPending([]);
+  return { synced: toSync.length };
 }
