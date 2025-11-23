@@ -109,11 +109,11 @@ function buildRange(period: Period, offset: number) {
 }
 
 // ===== Donut Chart (no library) =====
-const DonutChart: React.FC<{
-  income: number;
-  expense: number;
-  size?: number;
-}> = ({ income, expense, size = 178 }) => {
+const DonutChart: React.FC<{ income: number; expense: number; size?: number }> = ({
+  income,
+  expense,
+  size = 178,
+}) => {
   const total = income + expense;
   const incomePct = total > 0 ? Math.round((income / total) * 100) : 0;
   const expPct = total > 0 ? 100 - incomePct : 0;
@@ -154,6 +154,14 @@ const DonutChart: React.FC<{
   );
 };
 
+type NotiItem = {
+  id: string;
+  title: string;
+  desc: string;
+  level: "danger" | "warning" | "info";
+  timeLabel: string;
+};
+
 const LedgerScreen: React.FC<any> = () => {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -176,8 +184,17 @@ const LedgerScreen: React.FC<any> = () => {
   // report modal (list only)
   const [openReport, setOpenReport] = useState(false);
 
+  // Sidebar + Notification
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [notiOpen, setNotiOpen] = useState(false);
+
   // swipe
   const touchStartX = useRef<number | null>(null);
+
+  const goTo = (path: string) => {
+    // Fallback navigation for unknown router
+    window.location.href = path;
+  };
 
   // ===== fetch list + settings =====
   const fetchTransactions = async () => {
@@ -200,7 +217,6 @@ const LedgerScreen: React.FC<any> = () => {
       const s = await getSettings(user.id);
       setSettings({ ...DEFAULT_SETTINGS, user_id: user.id, ...(s || {}) });
     } catch (e) {
-      // fallback default silently
       console.warn("settings fallback default");
     }
   };
@@ -255,7 +271,8 @@ const LedgerScreen: React.FC<any> = () => {
 
   // Totals trong kỳ
   const { totalIncome, totalExpense, net } = useMemo(() => {
-    let inc = 0, exp = 0;
+    let inc = 0,
+      exp = 0;
     for (const tx of txInRange) {
       if (tx.type === "income") inc += Number(tx.amount || 0);
       if (tx.type === "expense") exp += Number(tx.amount || 0);
@@ -308,6 +325,71 @@ const LedgerScreen: React.FC<any> = () => {
     return diffDays >= days;
   }, [transactions, settings]);
 
+  const pendingSyncCount = useMemo(
+    () => transactions.filter((t) => t._pendingAt).length,
+    [transactions]
+  );
+
+  const notifications: NotiItem[] = useMemo(() => {
+    const items: NotiItem[] = [];
+    const nowLabel = new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+
+    if (cashLow) {
+      items.push({
+        id: "cash-low",
+        title: settings.cash_low_message || DEFAULT_SETTINGS.cash_low_message,
+        desc: `Số dư tiền mặt hiện tại: ${fmtMoney(cashBalance)} (ngưỡng: ${fmtMoney(
+          settings.cash_low_threshold
+        )}).`,
+        level: "danger",
+        timeLabel: nowLabel,
+      });
+    }
+
+    if (inactiveWarning) {
+      items.push({
+        id: "inactive",
+        title: settings.inactive_message || DEFAULT_SETTINGS.inactive_message,
+        desc: `Không có giao dịch mới trong ${settings.inactive_days_threshold} ngày gần nhất.`,
+        level: "warning",
+        timeLabel: nowLabel,
+      });
+    }
+
+    if (pendingSyncCount > 0) {
+      items.push({
+        id: "pending",
+        title: "Có giao dịch đang chờ sync",
+        desc: `Đang chờ đồng bộ: ${pendingSyncCount} giao dịch. Mở mạng để tự sync.`,
+        level: "info",
+        timeLabel: nowLabel,
+      });
+    }
+
+    if (items.length === 0) {
+      items.push({
+        id: "ok",
+        title: "Không có cảnh báo",
+        desc: "Dòng tiền đang ổn định. Tiếp tục cập nhật giao dịch hằng ngày nhé.",
+        level: "info",
+        timeLabel: nowLabel,
+      });
+    }
+
+    return items;
+  }, [
+    cashLow,
+    inactiveWarning,
+    pendingSyncCount,
+    settings,
+    cashBalance,
+  ]);
+
+  const notiBadge = useMemo(
+    () => notifications.filter((n) => n.id !== "ok").length,
+    [notifications]
+  );
+
   // ===== create tx =====
   const submitTx = async () => {
     if (!amount || amount <= 0) return alert("Nhập số tiền > 0.");
@@ -349,7 +431,7 @@ const LedgerScreen: React.FC<any> = () => {
     }
   };
 
-  // ===== swipe handlers =====
+  // ===== swipe =====
   const onTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
   };
@@ -364,21 +446,40 @@ const LedgerScreen: React.FC<any> = () => {
     touchStartX.current = null;
   };
 
+  const signOut = async () => {
+    if (!confirm("Đăng xuất khỏi tài khoản?")) return;
+    await supabase.auth.signOut();
+    goTo("/login");
+  };
+
   return (
     <div className="relative flex h-auto min-h-screen w-full flex-col bg-background-light dark:bg-background-dark font-display text-text-light dark:text-text-dark">
       {/* Header */}
-      <header className="sticky top-0 z-10 flex items-center justify-between bg-background-light/80 dark:bg-background-dark/80 p-4 pb-3 backdrop-blur-sm">
-        <div className="flex size-12 shrink-0 items-center justify-start">
+      <header className="sticky top-0 z-20 flex items-center justify-between bg-background-light/80 dark:bg-background-dark/80 p-4 pb-3 backdrop-blur-sm">
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="flex size-12 shrink-0 items-center justify-start"
+        >
           <span className="material-symbols-outlined text-3xl">menu</span>
-        </div>
+        </button>
+
         <h1 className="flex-1 text-center text-lg font-bold leading-tight tracking-[-0.015em]">
           Sổ Quỹ Tawa HCM
         </h1>
-        <div className="flex w-12 items-center justify-end">
-          <button className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-transparent">
+
+        <button
+          onClick={() => setNotiOpen(true)}
+          className="relative flex w-12 items-center justify-end"
+        >
+          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-transparent">
             <span className="material-symbols-outlined text-2xl">notifications</span>
-          </button>
-        </div>
+          </div>
+          {notiBadge > 0 && (
+            <span className="absolute right-2 top-1.5 grid place-items-center rounded-full bg-danger text-white text-[10px] font-bold px-1.5 py-0.5">
+              {notiBadge}
+            </span>
+          )}
+        </button>
       </header>
 
       <main className="flex flex-col gap-6 p-4 pt-2">
@@ -407,7 +508,7 @@ const LedgerScreen: React.FC<any> = () => {
           </div>
         </section>
 
-        {/* Warning cards (settings driven) */}
+        {/* Warning cards */}
         {cashLow && (
           <section className="flex items-start gap-3 rounded-2xl border border-danger/40 bg-danger/10 p-4 shadow-sm">
             <span className="material-symbols-outlined mt-0.5 text-xl text-danger">warning</span>
@@ -455,7 +556,7 @@ const LedgerScreen: React.FC<any> = () => {
           </button>
         </section>
 
-        {/* Period filter + totals + donut only */}
+        {/* Period filter + totals + donut */}
         <section className="flex flex-col gap-4">
           <div className="flex h-12 items-center justify-center rounded-2xl border border-border-light bg-card-light p-1 dark:border-border-dark dark:bg-card-dark">
             <label className="flex h-full grow cursor-pointer items-center justify-center rounded-xl px-2 text-sm font-semibold text-neutral-text-light has-[:checked]:bg-background-light has-[:checked]:text-text-light has-[:checked]:shadow-sm dark:text-neutral-text-dark dark:has-[:checked]:bg-background-dark dark:has-[:checked]:text-text-dark">
@@ -499,7 +600,6 @@ const LedgerScreen: React.FC<any> = () => {
               </div>
             </div>
 
-            {/* Totals gradient */}
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div className="rounded-2xl p-3 text-white shadow bg-gradient-to-br from-emerald-500/90 to-green-600">
                 <div className="text-xs opacity-90">Tổng thu</div>
@@ -511,8 +611,7 @@ const LedgerScreen: React.FC<any> = () => {
               </div>
             </div>
 
-            {/* Donut only */}
-            <div className="mb-1">
+            <div>
               <div className="text-center font-bold mb-2">Tỷ trọng Thu - Chi</div>
               <DonutChart income={totalIncome} expense={totalExpense} />
             </div>
@@ -580,7 +679,6 @@ const LedgerScreen: React.FC<any> = () => {
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    {/* Icon badge */}
                     <div
                       className={`flex h-11 w-11 items-center justify-center rounded-full shadow-sm ${
                         isIncome ? "bg-success/15 text-success" : "bg-danger/15 text-danger"
@@ -627,7 +725,121 @@ const LedgerScreen: React.FC<any> = () => {
         </section>
       </main>
 
-      {/* Modal add Thu/Chi */}
+      {/* ===== Sidebar Drawer ===== */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-40 flex">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <div className="relative h-full w-[78%] max-w-[320px] bg-card-light dark:bg-card-dark shadow-2xl p-4 animate-[slideInLeft_.18s_ease-out]">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <div className="text-lg font-extrabold">TAWA Cashflow</div>
+                <div className="text-xs opacity-70">Quản lý dòng tiền</div>
+              </div>
+              <button onClick={() => setSidebarOpen(false)}>
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <nav className="flex flex-col gap-2">
+              <button
+                onClick={() => { setSidebarOpen(false); goTo("/"); }}
+                className="flex items-center gap-3 rounded-xl px-3 py-3 hover:bg-black/5 dark:hover:bg-white/5"
+              >
+                <span className="material-symbols-outlined">dashboard</span>
+                <div className="font-semibold">Sổ quỹ</div>
+              </button>
+
+              <button
+                onClick={() => { setSidebarOpen(false); goTo("/settings"); }}
+                className="flex items-center gap-3 rounded-xl px-3 py-3 hover:bg-black/5 dark:hover:bg-white/5"
+              >
+                <span className="material-symbols-outlined">settings</span>
+                <div className="font-semibold">Cài đặt</div>
+              </button>
+
+              <button
+                onClick={() => { setSidebarOpen(false); setOpenReport(true); }}
+                className="flex items-center gap-3 rounded-xl px-3 py-3 hover:bg-black/5 dark:hover:bg-white/5"
+              >
+                <span className="material-symbols-outlined">bar_chart</span>
+                <div className="font-semibold">Báo cáo kỳ này</div>
+              </button>
+
+              <div className="my-2 border-t border-border-light dark:border-border-dark" />
+
+              <button
+                onClick={signOut}
+                className="flex items-center gap-3 rounded-xl px-3 py-3 text-danger hover:bg-danger/10"
+              >
+                <span className="material-symbols-outlined">logout</span>
+                <div className="font-semibold">Đăng xuất</div>
+              </button>
+            </nav>
+
+            <div className="absolute bottom-4 left-4 right-4 text-xs opacity-60">
+              v8 • Sidebar + Notification Center
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Notification Center Drawer ===== */}
+      {notiOpen && (
+        <div className="fixed inset-0 z-40 flex justify-end">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setNotiOpen(false)}
+          />
+          <div className="relative h-full w-[85%] max-w-[360px] bg-card-light dark:bg-card-dark shadow-2xl p-4 animate-[slideInRight_.18s_ease-out]">
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-lg font-extrabold">Thông báo</div>
+              <button onClick={() => setNotiOpen(false)}>
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {notifications.map((n) => {
+                const tone =
+                  n.level === "danger"
+                    ? "border-danger/40 bg-danger/10 text-danger"
+                    : n.level === "warning"
+                    ? "border-amber-400/40 bg-amber-400/10 text-amber-700 dark:text-amber-300"
+                    : "border-border-light bg-black/5 dark:bg-white/5";
+
+                const icon =
+                  n.level === "danger"
+                    ? "warning"
+                    : n.level === "warning"
+                    ? "schedule"
+                    : "info";
+
+                return (
+                  <div key={n.id} className={`rounded-2xl border p-3 shadow-sm ${tone}`}>
+                    <div className="flex items-start gap-2">
+                      <span className="material-symbols-outlined mt-0.5">{icon}</span>
+                      <div className="flex-1">
+                        <div className="font-bold leading-tight">{n.title}</div>
+                        <div className="text-sm opacity-80 mt-1">{n.desc}</div>
+                        <div className="text-[11px] opacity-60 mt-2">{n.timeLabel}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 text-xs opacity-60">
+              Mọi cảnh báo lấy theo cài đặt trong Settings.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Modal add Thu/Chi ===== */}
       {openModal && (
         <div className="fixed inset-0 z-50 flex items-end bg-black/40">
           <div className="w-full rounded-t-2xl bg-card-light dark:bg-card-dark p-4">
@@ -690,7 +902,7 @@ const LedgerScreen: React.FC<any> = () => {
         </div>
       )}
 
-      {/* Report modal (list only) */}
+      {/* ===== Report modal (list only) ===== */}
       {openReport && (
         <div className="fixed inset-0 z-50 flex items-end bg-black/40">
           <div className="w-full max-h-[85vh] overflow-auto rounded-t-2xl bg-card-light dark:bg-card-dark p-4">
@@ -747,6 +959,18 @@ const LedgerScreen: React.FC<any> = () => {
           </div>
         </div>
       )}
+
+      {/* Keyframes */}
+      <style>{`
+        @keyframes slideInLeft {
+          from { transform: translateX(-100%); opacity: .7; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideInRight {
+          from { transform: translateX(100%); opacity: .7; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 };
