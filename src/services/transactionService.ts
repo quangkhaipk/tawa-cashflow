@@ -1,184 +1,184 @@
-// src/services/transactionService.ts
 import { supabase } from "../supabaseClient";
 
-/**
- * DB đang dùng snake_case:
- * from_wallet, to_wallet
- * UI đang dùng camelCase:
- * fromWallet, toWallet
- * => Service sẽ tự map.
- */
+const PENDING_KEY = "pending_transactions_v2";
 
-// ===== pending local helpers =====
-const PENDING_KEY = "tawa_pending_transactions_v1";
-
-function getPending(): any[] {
+function loadPending() {
   try {
     return JSON.parse(localStorage.getItem(PENDING_KEY) || "[]");
   } catch {
     return [];
   }
 }
-function setPending(list: any[]) {
-  localStorage.setItem(PENDING_KEY, JSON.stringify(list));
-}
-function addPending(tx: any) {
-  const list = getPending();
-  list.push({ ...tx, _pendingAt: new Date().toISOString() });
-  setPending(list);
-}
-function removePendingByClientId(client_id: string) {
-  const list = getPending().filter((x) => x.client_id !== client_id);
-  setPending(list);
+function savePending(items: any[]) {
+  localStorage.setItem(PENDING_KEY, JSON.stringify(items));
 }
 
-// Detect network error only
-function isNetworkError(err: any) {
-  const msg = (err?.message || "").toLowerCase();
-  return (
-    msg.includes("failed to fetch") ||
-    msg.includes("networkerror") ||
-    msg.includes("timeout") ||
-    msg.includes("offline")
-  );
+async function getUserId() {
+  const user = (await supabase.auth.getUser()).data.user;
+  if (!user) throw new Error("Chưa đăng nhập");
+  return user.id;
 }
 
-function toSnake(tx: any) {
-  const out = { ...tx };
-  if ("fromWallet" in out) {
-    out.from_wallet = out.fromWallet;
-    delete out.fromWallet;
-  }
-  if ("toWallet" in out) {
-    out.to_wallet = out.toWallet;
-    delete out.toWallet;
-  }
-  return out;
-}
-
-// ===== CREATE =====
-export async function createTransaction(payload: any) {
-  const client_id = payload.client_id || crypto.randomUUID();
-  const dataToInsert = toSnake({ ...payload, client_id });
-
-  const { data, error } = await supabase
-    .from("transactions")
-    .insert(dataToInsert)
-    .select()
-    .single();
-
-  if (!error) {
-    return { data, isPending: false };
-  }
-
-  // RLS / schema errors => NOT pending
-  if (!isNetworkError(error)) {
-    console.error("CREATE TX ERROR (server):", error);
-    throw error;
-  }
-
-  // Network error => pending local
-  addPending(dataToInsert);
-  return { data: dataToInsert, isPending: true };
-}
-
-// ===== UPDATE =====
-export async function updateTransaction(id: string | number, patch: any) {
-  const client_id = patch.client_id || crypto.randomUUID();
-  const dataToUpdate = toSnake({ ...patch, client_id });
-
-  const { data, error } = await supabase
-    .from("transactions")
-    .update({ ...dataToUpdate, updated_at: new Date().toISOString() })
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (!error) {
-    return { data, isPending: false };
-  }
-
-  if (!isNetworkError(error)) {
-    console.error("UPDATE TX ERROR (server):", error);
-    throw error;
-  }
-
-  addPending({ ...dataToUpdate, id, _op: "update" });
-  return { data: { ...dataToUpdate, id }, isPending: true };
-}
-
-// ===== DELETE =====
-export async function removeTransaction(id: string | number) {
-  const { error } = await supabase.from("transactions").delete().eq("id", id);
-
-  if (!error) return { ok: true, isPending: false };
-
-  if (!isNetworkError(error)) {
-    console.error("DELETE TX ERROR (server):", error);
-    throw error;
-  }
-
-  addPending({ id, _op: "delete", client_id: crypto.randomUUID() });
-  return { ok: true, isPending: true };
-}
-
-// ===== LIST =====
 export async function listTransactions() {
+  const user_id = await getUserId();
   const { data, error } = await supabase
     .from("transactions")
     .select("*")
+    .eq("user_id", user_id)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  const pending = loadPending();
+  return [...pending, ...(data || [])].sort(
+    (a, b) =>
+      new Date(b.created_at || b._pendingAt).getTime() -
+      new Date(a.created_at || a._pendingAt).getTime()
+  );
+}
+
+export async function createTransaction(payload: any) {
+  const user_id = await getUserId();
+  const dataToInsert = { ...payload, user_id };
+
+  try {
+    const { data, error } = await supabase
+      .from("transactions")
+      .insert(dataToInsert)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data, isPending: false };
+  } catch (e) {
+    // offline fallback
+    const pending = loadPending();
+    const localTx = {
+      ...dataToInsert,
+      id: `pending-${Date.now()}`,
+      _pendingAt: new Date().toISOString(),
+    };
+    pending.unshift(localTx);
+    savePending(pending);
+    return { data: localTx, isPending: true };
+  }
+}
+
+export async function updateTransaction(id: any, patch: any) {
+  const user_id = await getUserId();
+
+  // nếu pending local
+  if (String(id).startsWith("pending-")) {
+    const pending = loadPending();
+    const idx = pending.findIndex((t: any) => t.id === id);
+    if (idx >= 0) {
+      const before = pending[idx];
+      pending[idx] = { ...before, ...patch };
+      savePending(pending);
+      return { data: pending[idx], isPending: true };
+    }
+  }
+
+  // lấy before để log
+  const { data: beforeData } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  const { data, error } = await supabase
+    .from("transactions")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("user_id", user_id)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  // log
+  await supabase.from("transaction_logs").insert({
+    tx_id: id,
+    action: "updated",
+    before_data: beforeData || null,
+    after_data: data,
+    user_id,
+  });
+
+  return { data, isPending: false };
+}
+
+export async function removeTransaction(id: any) {
+  const user_id = await getUserId();
+
+  if (String(id).startsWith("pending-")) {
+    const pending = loadPending().filter((t: any) => t.id !== id);
+    savePending(pending);
+    return { ok: true, isPending: true };
+  }
+
+  const { data: beforeData } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  const { error } = await supabase
+    .from("transactions")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user_id);
+
+  if (error) throw error;
+
+  await supabase.from("transaction_logs").insert({
+    tx_id: id,
+    action: "deleted",
+    before_data: beforeData || null,
+    after_data: null,
+    user_id,
+  });
+
+  return { ok: true, isPending: false };
+}
+
+export async function listTransactionLogs() {
+  const user_id = await getUserId();
+  const fromDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from("transaction_logs")
+    .select("*")
+    .eq("user_id", user_id)
+    .gte("created_at", fromDate)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
   return data || [];
 }
 
-// ===== SYNC PENDING =====
 export async function syncPendingTransactions() {
-  const pending = getPending();
+  const user_id = await getUserId();
+  const pending = loadPending();
   if (!pending.length) return { synced: 0 };
 
   let synced = 0;
+  const remain: any[] = [];
 
-  for (const item of pending) {
+  for (const p of pending) {
     try {
-      if (item._op === "update") {
-        const { _op, _pendingAt, ...patch } = item;
-        const { error } = await supabase
-          .from("transactions")
-          .update(patch)
-          .eq("id", item.id);
-        if (error) throw error;
-      } else if (item._op === "delete") {
-        const { error } = await supabase
-          .from("transactions")
-          .delete()
-          .eq("id", item.id);
-        if (error) throw error;
-      } else {
-        const { _op, _pendingAt, ...payload } = item;
-        const { error } = await supabase
-          .from("transactions")
-          .insert(payload);
-        if (error) throw error;
-      }
-
+      const { id, _pendingAt, ...rest } = p;
+      const { error } = await supabase.from("transactions").insert({
+        ...rest,
+        user_id,
+      });
+      if (error) throw error;
       synced++;
-      if (item.client_id) removePendingByClientId(item.client_id);
-    } catch (e: any) {
-      if (isNetworkError(e)) continue; // vẫn offline => giữ lại
-      console.error("SYNC PENDING ERROR:", e);
+    } catch {
+      remain.push(p);
     }
   }
 
-  return { synced };
-}
-export async function deleteAllTransactions(user_id: string) {
-  const { error } = await supabase
-    .from("transactions")
-    .delete()
-    .eq("user_id", user_id);
-
-  if (error) throw error;
-  return true;
+  savePending(remain);
+  return { synced, remain: remain.length };
 }
