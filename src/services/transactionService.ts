@@ -173,3 +173,12 @@ export async function syncPendingTransactions() {
 
   return { synced };
 }
+export async function deleteAllTransactions(user_id: string) {
+  const { error } = await supabase
+    .from("transactions")
+    .delete()
+    .eq("user_id", user_id);
+
+  if (error) throw error;
+  return true;
+}
