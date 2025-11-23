@@ -16,23 +16,8 @@ const BANK_WALLET_KEYS = ["bank", "ngân hàng", "ngan hang"];
 const WEEK_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
 // ===== Danh mục chuẩn Thu/Chi =====
-const INCOME_CATEGORIES = [
-  "ShopeeFood",
-  "GrabFood",
-  "Be",
-  "Xanh Ngon",
-  "Chuyển Khoản",
-];
-
-const EXPENSE_CATEGORIES = [
-  "Lương",
-  "Điện",
-  "Nước",
-  "Net",
-  "Thuê Nhà",
-  "Nguyên Liệu",
-  "Khác",
-];
+const INCOME_CATEGORIES = ["ShopeeFood", "GrabFood", "Be", "Xanh Ngon", "Chuyển Khoản"];
+const EXPENSE_CATEGORIES = ["Lương", "Điện", "Nước", "Net", "Thuê Nhà", "Nguyên Liệu", "Khác"];
 
 function isCashWallet(w?: string) {
   if (!w) return false;
@@ -70,11 +55,7 @@ function startOfMonth(d: Date) {
 }
 
 // Build chart buckets by period + offset (0 = current, -1 = previous)
-function buildChartData(
-  transactions: any[],
-  period: Period,
-  offset: number
-) {
+function buildChartData(transactions: any[], period: Period, offset: number) {
   const now = new Date();
 
   if (period === "day") {
@@ -168,6 +149,54 @@ function buildChartData(
   };
 }
 
+// ===== Donut Chart (no library) =====
+const DonutChart: React.FC<{
+  income: number;
+  expense: number;
+  size?: number;
+}> = ({ income, expense, size = 170 }) => {
+  const total = income + expense;
+  const incomePct = total > 0 ? Math.round((income / total) * 100) : 0;
+  const expensePct = total > 0 ? 100 - incomePct : 0;
+
+  const bg = `conic-gradient(
+    #28a745 0% ${incomePct}%,
+    #dc3545 ${incomePct}% 100%
+  )`;
+
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <div
+        className="relative grid place-items-center rounded-full"
+        style={{ width: size, height: size, background: bg }}
+      >
+        {/* inner hole */}
+        <div
+          className="grid place-items-center rounded-full bg-card-light dark:bg-card-dark shadow-sm"
+          style={{ width: size * 0.7, height: size * 0.7 }}
+        >
+          <div className="text-xs opacity-70">Tổng</div>
+          <div className="text-xl font-extrabold">{fmtMoney(total)}</div>
+        </div>
+      </div>
+
+      {/* legend */}
+      <div className="flex items-center gap-6 text-sm">
+        <div className="flex items-center gap-2">
+          <span className="inline-block size-2 rounded-full bg-success" />
+          <span className="font-semibold">Thu</span>
+          <span className="opacity-70">({incomePct}%)</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="inline-block size-2 rounded-full bg-danger" />
+          <span className="font-semibold">Chi</span>
+          <span className="opacity-70">({expensePct}%)</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const LedgerScreen: React.FC<any> = () => {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -238,7 +267,7 @@ const LedgerScreen: React.FC<any> = () => {
     };
   }, []);
 
-  // Reset offset when period changes
+  // Reset offset khi đổi period
   useEffect(() => {
     setPeriodOffset(0);
     setActiveBar(null);
@@ -246,9 +275,7 @@ const LedgerScreen: React.FC<any> = () => {
 
   // Chart data theo period + offset
   const chart = useMemo(() => buildChartData(transactions, period, periodOffset), [
-    transactions,
-    period,
-    periodOffset,
+    transactions, period, periodOffset,
   ]);
 
   const chartMax = useMemo(() => {
@@ -310,7 +337,6 @@ const LedgerScreen: React.FC<any> = () => {
     if (!amount || amount <= 0) return alert("Nhập số tiền > 0.");
     try {
       const user = (await supabase.auth.getUser()).data.user;
-
       const payload = {
         user_id: user?.id,
         type: openModal as TxType,
@@ -357,27 +383,20 @@ const LedgerScreen: React.FC<any> = () => {
     const dx = endX - touchStartX.current;
 
     if (dx < -50) {
-      // swipe left => previous period
       setPeriodOffset((o) => o - 1);
       setActiveBar(null);
     } else if (dx > 50) {
-      // swipe right => toward current, no future
       setPeriodOffset((o) => Math.min(0, o + 1));
       setActiveBar(null);
     }
     touchStartX.current = null;
   };
 
-  // Tooltip computed
   const tooltip = useMemo(() => {
     if (!activeBar) return null;
     const b = chart.buckets[activeBar.i];
     const value = activeBar.kind === "income" ? b.income : b.expense;
-    return {
-      label: chart.labels[activeBar.i],
-      kind: activeBar.kind,
-      value,
-    };
+    return { label: chart.labels[activeBar.i], kind: activeBar.kind, value };
   }, [activeBar, chart]);
 
   return (
@@ -453,35 +472,20 @@ const LedgerScreen: React.FC<any> = () => {
           </button>
         </section>
 
-        {/* Period filter + summary + chart */}
+        {/* Period filter + summary + donut + chart */}
         <section className="flex flex-col gap-4">
           <div className="flex h-12 flex-1 items-center justify-center rounded-xl border border-border-light bg-card-light p-1 dark:border-border-dark dark:bg-card-dark">
             <label className="flex h-full grow cursor-pointer items-center justify-center overflow-hidden rounded-lg px-2 text-sm font-medium text-neutral-text-light has-[:checked]:bg-background-light has-[:checked]:text-text-light has-[:checked]:shadow-sm dark:text-neutral-text-dark dark:has-[:checked]:bg-background-dark dark:has-[:checked]:text-text-dark">
               <span className="truncate">Ngày</span>
-              <input
-                className="invisible w-0"
-                type="radio"
-                checked={period === "day"}
-                onChange={() => setPeriod("day")}
-              />
+              <input className="invisible w-0" type="radio" checked={period === "day"} onChange={() => setPeriod("day")} />
             </label>
             <label className="flex h-full grow cursor-pointer items-center justify-center overflow-hidden rounded-lg px-2 text-sm font-medium text-neutral-text-light has-[:checked]:bg-background-light has-[:checked]:text-text-light has-[:checked]:shadow-sm dark:text-neutral-text-dark dark:has-[:checked]:bg-background-dark dark:has-[:checked]:text-text-dark">
               <span className="truncate">Tuần</span>
-              <input
-                className="invisible w-0"
-                type="radio"
-                checked={period === "week"}
-                onChange={() => setPeriod("week")}
-              />
+              <input className="invisible w-0" type="radio" checked={period === "week"} onChange={() => setPeriod("week")} />
             </label>
             <label className="flex h-full grow cursor-pointer items-center justify-center overflow-hidden rounded-lg px-2 text-sm font-medium text-neutral-text-light has-[:checked]:bg-background-light has-[:checked]:text-text-light has-[:checked]:shadow-sm dark:text-neutral-text-dark dark:has-[:checked]:bg-background-dark dark:has-[:checked]:text-text-dark">
               <span className="truncate">Tháng</span>
-              <input
-                className="invisible w-0"
-                type="radio"
-                checked={period === "month"}
-                onChange={() => setPeriod("month")}
-              />
+              <input className="invisible w-0" type="radio" checked={period === "month"} onChange={() => setPeriod("month")} />
             </label>
           </div>
 
@@ -508,7 +512,8 @@ const LedgerScreen: React.FC<any> = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {/* Totals row */}
+            <div className="grid grid-cols-2 gap-4 mb-4">
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-1.5 text-neutral-text-light dark:text-neutral-text-dark">
                   <div className="size-2 rounded-full bg-success"></div>
@@ -525,12 +530,18 @@ const LedgerScreen: React.FC<any> = () => {
               </div>
             </div>
 
-            {/* Chart + Tooltip */}
+            {/* Donut ratio */}
+            <div className="mb-5">
+              <div className="text-center font-bold mb-2">Tỷ trọng Thu - Chi</div>
+              <DonutChart income={totalIncome} expense={totalExpense} />
+            </div>
+
+            {/* Bar chart + tooltip */}
             <div
               ref={chartRef}
               onTouchStart={onTouchStart}
               onTouchEnd={onTouchEnd}
-              className="relative mt-4 h-44 w-full select-none"
+              className="relative mt-2 h-44 w-full select-none"
             >
               {tooltip && (
                 <div className="absolute left-1/2 -translate-x-1/2 top-1 z-10 rounded-xl bg-black/80 text-white px-3 py-2 text-xs shadow-lg">
@@ -654,9 +665,7 @@ const LedgerScreen: React.FC<any> = () => {
                         {time} - {tx.wallet || "Ví tiền mặt"}
                       </p>
                       {tx.category && (
-                        <p className="text-xs opacity-70">
-                          Danh mục: {tx.category}
-                        </p>
+                        <p className="text-xs opacity-70">Danh mục: {tx.category}</p>
                       )}
                       {tx._pendingAt && <p className="text-xs text-danger">Chờ sync</p>}
                     </div>
@@ -664,8 +673,7 @@ const LedgerScreen: React.FC<any> = () => {
 
                   <div className="flex items-center gap-2">
                     <p className={`font-bold ${moneyCls}`}>
-                      {sign}
-                      {fmtMoney(Number(tx.amount || 0))}
+                      {sign}{fmtMoney(Number(tx.amount || 0))}
                     </p>
                     <button onClick={() => onDelete(tx.id)} className="text-xs text-danger">
                       Xoá
@@ -686,9 +694,7 @@ const LedgerScreen: React.FC<any> = () => {
               <h4 className="text-lg font-bold">
                 {openModal === "income" ? "Thêm Thu" : "Thêm Chi"}
               </h4>
-              <button onClick={() => setOpenModal(null)} className="opacity-70">
-                Đóng
-              </button>
+              <button onClick={() => setOpenModal(null)} className="opacity-70">Đóng</button>
             </div>
 
             <div className="flex flex-col gap-3">
@@ -700,7 +706,6 @@ const LedgerScreen: React.FC<any> = () => {
                 onChange={(e) => setAmount(Number(e.target.value))}
               />
 
-              {/* Dropdown danh mục theo loại */}
               <select
                 className="w-full rounded-lg border-border-light bg-background-light dark:bg-background-dark py-2 px-3"
                 value={category}
@@ -708,9 +713,7 @@ const LedgerScreen: React.FC<any> = () => {
               >
                 <option value="">Chọn danh mục</option>
                 {(openModal === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
+                  <option key={c} value={c}>{c}</option>
                 ))}
               </select>
 
@@ -752,9 +755,7 @@ const LedgerScreen: React.FC<any> = () => {
           <div className="w-full max-h-[85vh] overflow-auto rounded-t-2xl bg-card-light dark:bg-card-dark p-4">
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-lg font-bold">Báo cáo chi tiết</h4>
-              <button onClick={() => setOpenReport(false)} className="opacity-70">
-                Đóng
-              </button>
+              <button onClick={() => setOpenReport(false)} className="opacity-70">Đóng</button>
             </div>
 
             <div className="text-sm opacity-70 mb-2">{chart.title}</div>
@@ -791,17 +792,10 @@ const LedgerScreen: React.FC<any> = () => {
                   </thead>
                   <tbody>
                     {chart.labels.map((lb, i) => (
-                      <tr
-                        key={lb}
-                        className="border-t border-border-light dark:border-border-dark"
-                      >
+                      <tr key={lb} className="border-t border-border-light dark:border-border-dark">
                         <td className="p-2">{lb}</td>
-                        <td className="p-2 text-right text-success">
-                          {fmtMoney(chart.buckets[i].income)}
-                        </td>
-                        <td className="p-2 text-right text-danger">
-                          {fmtMoney(chart.buckets[i].expense)}
-                        </td>
+                        <td className="p-2 text-right text-success">{fmtMoney(chart.buckets[i].income)}</td>
+                        <td className="p-2 text-right text-danger">{fmtMoney(chart.buckets[i].expense)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -810,21 +804,14 @@ const LedgerScreen: React.FC<any> = () => {
             </div>
 
             <div>
-              <div className="font-semibold mb-2">
-                Danh sách giao dịch ({txInRange.length})
-              </div>
+              <div className="font-semibold mb-2">Danh sách giao dịch ({txInRange.length})</div>
               <ul className="flex flex-col">
                 {txInRange.map((tx, idx) => {
                   const isIncome = tx.type === "income";
                   const moneyCls = isIncome ? "text-success" : "text-danger";
                   const sign = isIncome ? "+" : "-";
                   const time = new Date(tx.created_at || tx._pendingAt || Date.now())
-                    .toLocaleString("vi-VN", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      day: "2-digit",
-                      month: "2-digit",
-                    });
+                    .toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
 
                   return (
                     <li
@@ -840,8 +827,7 @@ const LedgerScreen: React.FC<any> = () => {
                         </div>
                       </div>
                       <div className={`font-bold ${moneyCls}`}>
-                        {sign}
-                        {fmtMoney(Number(tx.amount || 0))}
+                        {sign}{fmtMoney(Number(tx.amount || 0))}
                       </div>
                     </li>
                   );
