@@ -15,6 +15,25 @@ const CASH_WALLET_KEYS = ["cash", "tiền mặt", "tien mat"];
 const BANK_WALLET_KEYS = ["bank", "ngân hàng", "ngan hang"];
 const WEEK_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
+// ===== Danh mục chuẩn Thu/Chi =====
+const INCOME_CATEGORIES = [
+  "ShopeeFood",
+  "GrabFood",
+  "Be",
+  "Xanh Ngon",
+  "Chuyển Khoản",
+];
+
+const EXPENSE_CATEGORIES = [
+  "Lương",
+  "Điện",
+  "Nước",
+  "Net",
+  "Thuê Nhà",
+  "Nguyên Liệu",
+  "Khác",
+];
+
 function isCashWallet(w?: string) {
   if (!w) return false;
   const x = w.toLowerCase();
@@ -291,6 +310,7 @@ const LedgerScreen: React.FC<any> = () => {
     if (!amount || amount <= 0) return alert("Nhập số tiền > 0.");
     try {
       const user = (await supabase.auth.getUser()).data.user;
+
       const payload = {
         user_id: user?.id,
         type: openModal as TxType,
@@ -336,13 +356,12 @@ const LedgerScreen: React.FC<any> = () => {
     const endX = e.changedTouches[0].clientX;
     const dx = endX - touchStartX.current;
 
-    // swipe threshold
     if (dx < -50) {
-      // swipe left => go previous period (offset -1)
+      // swipe left => previous period
       setPeriodOffset((o) => o - 1);
       setActiveBar(null);
     } else if (dx > 50) {
-      // swipe right => go toward current (offset +1) but not beyond 0
+      // swipe right => toward current, no future
       setPeriodOffset((o) => Math.min(0, o + 1));
       setActiveBar(null);
     }
@@ -513,7 +532,6 @@ const LedgerScreen: React.FC<any> = () => {
               onTouchEnd={onTouchEnd}
               className="relative mt-4 h-44 w-full select-none"
             >
-              {/* Tooltip bubble */}
               {tooltip && (
                 <div className="absolute left-1/2 -translate-x-1/2 top-1 z-10 rounded-xl bg-black/80 text-white px-3 py-2 text-xs shadow-lg">
                   <div className="font-semibold">
@@ -560,13 +578,11 @@ const LedgerScreen: React.FC<any> = () => {
                 })}
               </div>
 
-              {/* Swipe hint */}
               <div className="absolute bottom-0 left-0 right-0 text-center text-[11px] opacity-60">
                 Vuốt trái/phải để xem kỳ trước
               </div>
             </div>
 
-            {/* View full report */}
             <button
               onClick={() => setOpenReport(true)}
               className="mt-3 w-full rounded-lg border border-border-light dark:border-border-dark py-2 text-sm font-bold text-primary"
@@ -637,6 +653,11 @@ const LedgerScreen: React.FC<any> = () => {
                       <p className="text-sm text-neutral-text-light dark:text-neutral-text-dark">
                         {time} - {tx.wallet || "Ví tiền mặt"}
                       </p>
+                      {tx.category && (
+                        <p className="text-xs opacity-70">
+                          Danh mục: {tx.category}
+                        </p>
+                      )}
                       {tx._pendingAt && <p className="text-xs text-danger">Chờ sync</p>}
                     </div>
                   </div>
@@ -679,13 +700,19 @@ const LedgerScreen: React.FC<any> = () => {
                 onChange={(e) => setAmount(Number(e.target.value))}
               />
 
-              <input
-                type="text"
+              {/* Dropdown danh mục theo loại */}
+              <select
                 className="w-full rounded-lg border-border-light bg-background-light dark:bg-background-dark py-2 px-3"
-                placeholder="Danh mục (tuỳ chọn)"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-              />
+              >
+                <option value="">Chọn danh mục</option>
+                {(openModal === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
 
               <select
                 className="w-full rounded-lg border-border-light bg-background-light dark:bg-background-dark py-2 px-3"
@@ -730,9 +757,7 @@ const LedgerScreen: React.FC<any> = () => {
               </button>
             </div>
 
-            <div className="text-sm opacity-70 mb-2">
-              {chart.title}
-            </div>
+            <div className="text-sm opacity-70 mb-2">{chart.title}</div>
 
             <div className="grid grid-cols-3 gap-2 mb-4">
               <div className="rounded-lg border border-border-light dark:border-border-dark p-3">
@@ -751,9 +776,10 @@ const LedgerScreen: React.FC<any> = () => {
               </div>
             </div>
 
-            {/* Bucket table */}
             <div className="mb-4">
-              <div className="font-semibold mb-2">Tổng hợp theo {period === "day" ? "giờ" : period === "week" ? "ngày" : "tuần"}</div>
+              <div className="font-semibold mb-2">
+                Tổng hợp theo {period === "day" ? "giờ" : period === "week" ? "ngày" : "tuần"}
+              </div>
               <div className="rounded-xl border border-border-light dark:border-border-dark overflow-hidden">
                 <table className="w-full text-sm">
                   <thead className="bg-background-light dark:bg-background-dark">
@@ -765,10 +791,17 @@ const LedgerScreen: React.FC<any> = () => {
                   </thead>
                   <tbody>
                     {chart.labels.map((lb, i) => (
-                      <tr key={lb} className="border-t border-border-light dark:border-border-dark">
+                      <tr
+                        key={lb}
+                        className="border-t border-border-light dark:border-border-dark"
+                      >
                         <td className="p-2">{lb}</td>
-                        <td className="p-2 text-right text-success">{fmtMoney(chart.buckets[i].income)}</td>
-                        <td className="p-2 text-right text-danger">{fmtMoney(chart.buckets[i].expense)}</td>
+                        <td className="p-2 text-right text-success">
+                          {fmtMoney(chart.buckets[i].income)}
+                        </td>
+                        <td className="p-2 text-right text-danger">
+                          {fmtMoney(chart.buckets[i].expense)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -776,16 +809,22 @@ const LedgerScreen: React.FC<any> = () => {
               </div>
             </div>
 
-            {/* Full tx list */}
             <div>
-              <div className="font-semibold mb-2">Danh sách giao dịch ({txInRange.length})</div>
+              <div className="font-semibold mb-2">
+                Danh sách giao dịch ({txInRange.length})
+              </div>
               <ul className="flex flex-col">
                 {txInRange.map((tx, idx) => {
                   const isIncome = tx.type === "income";
                   const moneyCls = isIncome ? "text-success" : "text-danger";
                   const sign = isIncome ? "+" : "-";
                   const time = new Date(tx.created_at || tx._pendingAt || Date.now())
-                    .toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
+                    .toLocaleString("vi-VN", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      day: "2-digit",
+                      month: "2-digit",
+                    });
 
                   return (
                     <li
@@ -801,7 +840,8 @@ const LedgerScreen: React.FC<any> = () => {
                         </div>
                       </div>
                       <div className={`font-bold ${moneyCls}`}>
-                        {sign}{fmtMoney(Number(tx.amount || 0))}
+                        {sign}
+                        {fmtMoney(Number(tx.amount || 0))}
                       </div>
                     </li>
                   );
