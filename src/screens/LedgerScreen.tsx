@@ -109,11 +109,11 @@ function buildRange(period: Period, offset: number) {
 }
 
 // ===== Donut Chart (no library) =====
-const DonutChart: React.FC<{ income: number; expense: number; size?: number }> = ({
-  income,
-  expense,
-  size = 178,
-}) => {
+const DonutChart: React.FC<{
+  income: number;
+  expense: number;
+  size?: number;
+}> = ({ income, expense, size = 178 }) => {
   const total = income + expense;
   const incomePct = total > 0 ? Math.round((income / total) * 100) : 0;
   const expPct = total > 0 ? 100 - incomePct : 0;
@@ -162,7 +162,7 @@ type NotiItem = {
   timeLabel: string;
 };
 
-const LedgerScreen: React.FC<any> = () => {
+const LedgerScreen: React.FC<any> = ({ onNavigate }) => {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -191,9 +191,9 @@ const LedgerScreen: React.FC<any> = () => {
   // swipe
   const touchStartX = useRef<number | null>(null);
 
-  const goTo = (path: string) => {
-    // Fallback navigation for unknown router
-    window.location.href = path;
+  const goTo = (tabKey: string) => {
+    if (typeof onNavigate === "function") onNavigate(tabKey);
+    else alert("Chưa có điều hướng tab trong App.tsx");
   };
 
   // ===== fetch list + settings =====
@@ -377,13 +377,7 @@ const LedgerScreen: React.FC<any> = () => {
     }
 
     return items;
-  }, [
-    cashLow,
-    inactiveWarning,
-    pendingSyncCount,
-    settings,
-    cashBalance,
-  ]);
+  }, [cashLow, inactiveWarning, pendingSyncCount, settings, cashBalance]);
 
   const notiBadge = useMemo(
     () => notifications.filter((n) => n.id !== "ok").length,
@@ -431,7 +425,7 @@ const LedgerScreen: React.FC<any> = () => {
     }
   };
 
-  // ===== swipe =====
+  // ===== swipe handlers =====
   const onTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
   };
@@ -449,7 +443,7 @@ const LedgerScreen: React.FC<any> = () => {
   const signOut = async () => {
     if (!confirm("Đăng xuất khỏi tài khoản?")) return;
     await supabase.auth.signOut();
-    goTo("/login");
+    goTo("dashboard");
   };
 
   return (
@@ -745,15 +739,15 @@ const LedgerScreen: React.FC<any> = () => {
 
             <nav className="flex flex-col gap-2">
               <button
-                onClick={() => { setSidebarOpen(false); goTo("/"); }}
+                onClick={() => { setSidebarOpen(false); goTo("ledger"); }}
                 className="flex items-center gap-3 rounded-xl px-3 py-3 hover:bg-black/5 dark:hover:bg-white/5"
               >
-                <span className="material-symbols-outlined">dashboard</span>
+                <span className="material-symbols-outlined">wallet</span>
                 <div className="font-semibold">Sổ quỹ</div>
               </button>
 
               <button
-                onClick={() => { setSidebarOpen(false); goTo("/settings"); }}
+                onClick={() => { setSidebarOpen(false); goTo("settings"); }}
                 className="flex items-center gap-3 rounded-xl px-3 py-3 hover:bg-black/5 dark:hover:bg-white/5"
               >
                 <span className="material-symbols-outlined">settings</span>
@@ -780,7 +774,7 @@ const LedgerScreen: React.FC<any> = () => {
             </nav>
 
             <div className="absolute bottom-4 left-4 right-4 text-xs opacity-60">
-              v8 • Sidebar + Notification Center
+              v9 • Sidebar + Notification Center
             </div>
           </div>
         </div>
@@ -839,7 +833,7 @@ const LedgerScreen: React.FC<any> = () => {
         </div>
       )}
 
-      {/* ===== Modal add Thu/Chi ===== */}
+      {/* Modal add Thu/Chi */}
       {openModal && (
         <div className="fixed inset-0 z-50 flex items-end bg-black/40">
           <div className="w-full rounded-t-2xl bg-card-light dark:bg-card-dark p-4">
@@ -847,7 +841,9 @@ const LedgerScreen: React.FC<any> = () => {
               <h4 className="text-lg font-bold">
                 {openModal === "income" ? "Thêm Thu" : "Thêm Chi"}
               </h4>
-              <button onClick={() => setOpenModal(null)} className="opacity-70">Đóng</button>
+              <button onClick={() => setOpenModal(null)} className="opacity-70">
+                Đóng
+              </button>
             </div>
 
             <div className="flex flex-col gap-3">
@@ -866,7 +862,9 @@ const LedgerScreen: React.FC<any> = () => {
               >
                 <option value="">Chọn danh mục</option>
                 {(openModal === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
                 ))}
               </select>
 
@@ -902,13 +900,15 @@ const LedgerScreen: React.FC<any> = () => {
         </div>
       )}
 
-      {/* ===== Report modal (list only) ===== */}
+      {/* Report modal */}
       {openReport && (
         <div className="fixed inset-0 z-50 flex items-end bg-black/40">
           <div className="w-full max-h-[85vh] overflow-auto rounded-t-2xl bg-card-light dark:bg-card-dark p-4">
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-lg font-bold">Giao dịch kỳ này</h4>
-              <button onClick={() => setOpenReport(false)} className="opacity-70">Đóng</button>
+              <button onClick={() => setOpenReport(false)} className="opacity-70">
+                Đóng
+              </button>
             </div>
 
             <div className="text-sm opacity-70 mb-3">{range.title}</div>
@@ -933,8 +933,10 @@ const LedgerScreen: React.FC<any> = () => {
                 const isIncome = tx.type === "income";
                 const moneyCls = isIncome ? "text-success" : "text-danger";
                 const sign = isIncome ? "+" : "-";
-                const time = new Date(tx.created_at || tx._pendingAt || Date.now())
-                  .toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
+                const time = new Date(tx.created_at || tx._pendingAt || Date.now()).toLocaleString(
+                  "vi-VN",
+                  { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }
+                );
 
                 return (
                   <li
@@ -950,7 +952,8 @@ const LedgerScreen: React.FC<any> = () => {
                       </div>
                     </div>
                     <div className={`font-extrabold ${moneyCls}`}>
-                      {sign}{fmtMoney(Number(tx.amount || 0))}
+                      {sign}
+                      {fmtMoney(Number(tx.amount || 0))}
                     </div>
                   </li>
                 );

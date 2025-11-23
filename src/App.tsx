@@ -1,103 +1,72 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import LedgerScreen from './screens/LedgerScreen';
-import { supabase } from './supabaseClient';
-import { Transaction } from './types';
+// src/App.tsx
+import React, { useState } from "react";
+
+import DashboardScreen from "./screens/DashboardScreen";
+import LedgerScreen from "./screens/LedgerScreen";
+import OrdersScreen from "./screens/OrdersScreen";
+import ReconciliationScreen from "./screens/ReconciliationScreen";
+import ReportsScreen from "./screens/ReportsScreen";
+import SettingsScreen from "./screens/SettingsScreen";
+
+type TabKey = "dashboard" | "ledger" | "orders" | "reconciliation" | "reports" | "settings";
 
 const App: React.FC = () => {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<TabKey>("ledger");
 
-  const fetchTransactions = useCallback(async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching transactions:', error);
-      alert('Không thể tải dữ liệu giao dịch.');
-    } else {
-      // Convert date strings from Supabase back to Date objects
-      const formattedData = data.map(tx => ({
-        ...tx,
-        amount: Number(tx.amount), // Ensure amount is a number
-        created_at: new Date(tx.created_at),
-        updated_at: tx.updated_at ? new Date(tx.updated_at) : undefined,
-      }));
-      setTransactions(formattedData as unknown as Transaction[]);
-    }
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    fetchTransactions();
-  }, [fetchTransactions]);
-
-  const handleSaveTransaction = async (
-    transactionData: Omit<Transaction, 'id' | 'created_at' | 'updated_at'>,
-    id?: number
-  ) => {
-    const dataToUpsert = {
-      ...transactionData,
-      from_wallet: transactionData.fromWallet,
-      to_wallet: transactionData.toWallet,
-    }
-    // remove camelCase versions
-    delete (dataToUpsert as any).fromWallet
-    delete (dataToUpsert as any).toWallet
-
-    if (id) {
-      // Update existing transaction
-      const { error } = await supabase
-        .from('transactions')
-        .update({ ...dataToUpsert, updated_at: new Date() })
-        .eq('id', id);
-
-      if (error) {
-        console.error('Error updating transaction:', error);
-        alert('Lỗi: Không thể cập nhật giao dịch.');
-      } else {
-        fetchTransactions(); // Refresh data
-      }
-    } else {
-      // Create new transaction
-      const { error } = await supabase.from('transactions').insert(dataToUpsert);
-      if (error) {
-        console.error('Error adding transaction:', error);
-        alert('Lỗi: Không thể thêm giao dịch mới.');
-      } else {
-        fetchTransactions(); // Refresh data
-      }
-    }
-  };
-
-  const handleDeleteTransaction = async (id: number) => {
-    const { error } = await supabase.from('transactions').delete().eq('id', id);
-    if (error) {
-      console.error('Error deleting transaction:', error);
-      alert('Lỗi: Không thể xoá giao dịch.');
-    } else {
-      fetchTransactions(); // Refresh data
+  const renderScreen = () => {
+    switch (activeTab) {
+      case "dashboard":
+        return <DashboardScreen onNavigate={setActiveTab} />;
+      case "ledger":
+        return <LedgerScreen onNavigate={setActiveTab} />;
+      case "orders":
+        return <OrdersScreen onNavigate={setActiveTab} />;
+      case "reconciliation":
+        return <ReconciliationScreen onNavigate={setActiveTab} />;
+      case "reports":
+        return <ReportsScreen onNavigate={setActiveTab} />;
+      case "settings":
+        return <SettingsScreen onNavigate={setActiveTab} />;
+      default:
+        return <LedgerScreen onNavigate={setActiveTab} />;
     }
   };
 
   return (
-    <div className="relative flex h-auto min-h-screen w-full flex-col bg-background-light dark:bg-background-dark">
-      <div className="max-w-lg mx-auto w-full flex-1 flex flex-col">
-        {loading ? (
-           <div className="flex-1 flex items-center justify-center">
-             <p className="text-lg font-semibold animate-pulse">Đang tải dữ liệu...</p>
-           </div>
-        ) : (
-          <LedgerScreen
-            transactions={transactions}
-            onSaveTransaction={handleSaveTransaction}
-            onDeleteTransaction={handleDeleteTransaction}
-          />
-        )}
-      </div>
+    <div className="min-h-screen bg-background-light dark:bg-background-dark text-text-light dark:text-text-dark">
+      {/* Main screen */}
+      <div className="pb-16">{renderScreen()}</div>
+
+      {/* Bottom Tab Bar */}
+      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-border-light dark:border-border-dark bg-card-light dark:bg-card-dark">
+        <div className="grid grid-cols-5 text-xs font-semibold">
+          <TabButton label="Sổ quỹ" icon="wallet" active={activeTab === "ledger"} onClick={() => setActiveTab("ledger")} />
+          <TabButton label="Dashboard" icon="dashboard" active={activeTab === "dashboard"} onClick={() => setActiveTab("dashboard")} />
+          <TabButton label="Đơn" icon="receipt_long" active={activeTab === "orders"} onClick={() => setActiveTab("orders")} />
+          <TabButton label="Báo cáo" icon="bar_chart" active={activeTab === "reports"} onClick={() => setActiveTab("reports")} />
+          <TabButton label="Setting" icon="settings" active={activeTab === "settings"} onClick={() => setActiveTab("settings")} />
+        </div>
+      </nav>
     </div>
+  );
+};
+
+const TabButton: React.FC<{
+  label: string;
+  icon: string;
+  active?: boolean;
+  onClick: () => void;
+}> = ({ label, icon, active, onClick }) => {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex flex-col items-center justify-center gap-1 py-2 ${
+        active ? "text-primary" : "text-neutral-text-light dark:text-neutral-text-dark"
+      }`}
+    >
+      <span className="material-symbols-outlined text-xl">{icon}</span>
+      <span>{label}</span>
+    </button>
   );
 };
 
